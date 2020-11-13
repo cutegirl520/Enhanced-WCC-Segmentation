@@ -19,4 +19,17 @@ void vlog(int n, const float* x, float* y);
 void vlog_backward(int n, const float* fx, const float* dEdf, float* dEdx);
 void vlogistic(int n, const float* x, float* y);
 void vlogistic_backward(int n, const float* fx, const float* dEdf, float* dEdx);
-void l2_norm_reduc
+void l2_norm_reducer(int n, const float* x0, float* y, bool square, bool accumulate);
+void sqeucdist(int n, const float* x0, const float *x1, float* y);
+void sqeucdist_backward(int n, const float* dEdy, const float* x0, const float* x1, float* dEdx, int i);
+void softmax(int n, const float* x0, float* y);
+void softmax_backward(int n, const float* x0, const float* dEdf, float* dEdx);
+void pnlsoftmax(int n, int elem_idx, const float* x0, float* y, float* logz);
+void pnlsoftmax_backward(int n, int elem_idx, const float* x0, const float* dEdf, const float* logz, float* dEdx);
+
+void sgd_update(int n, const float* g, float* x, float scale, float lambda);
+
+} // namespace gpu
+} // namespace cnn
+
+#endif
