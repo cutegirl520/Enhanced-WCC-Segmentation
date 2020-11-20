@@ -873,4 +873,66 @@ string PoissonRegressionLoss::as_string(const vector<string>& arg_names) const {
 
 Dim PoissonRegressionLoss::dim_forward(const vector<Dim>& xs) const {
   if (xs.size() != 1 || xs[0].size() != 1) {
-    ostringstream s; s << "Bad in
+    ostringstream s; s << "Bad input dimensions in PoissonRegressionLoss: " << xs;
+    throw std::invalid_argument(s.str());
+  }
+  return xs[0];
+}
+
+string SquaredNorm::as_string(const vector<string>& arg_names) const {
+  ostringstream s;
+  s << "|| " << arg_names[0] << " ||^2";
+  return s.str();
+}
+
+Dim SquaredNorm::dim_forward(const vector<Dim>& xs) const {
+  assert(xs.size() == 1);
+  return Dim({1}, xs[0].bd);
+}
+
+string SquaredEuclideanDistance::as_string(const vector<string>& arg_names) const {
+  ostringstream s;
+  s << "|| " << arg_names[0] << " - " << arg_names[1] << " ||^2";
+  return s.str();
+}
+
+Dim SquaredEuclideanDistance::dim_forward(const vector<Dim>& xs) const {
+  assert(xs.size() == 2);
+  if (xs[0].single_batch() != xs[1].single_batch()) {
+    ostringstream s; s << "Bad input dimensions in SquaredEuclideanDistance: " << xs;
+    throw std::invalid_argument(s.str());
+  }
+  return Dim({1}, max(xs[0].bd, xs[1].bd));
+}
+
+string LogisticSigmoid::as_string(const vector<string>& arg_names) const {
+  ostringstream s;
+  s << "\\sigma(" << arg_names[0] << ')';
+  return s.str();
+}
+
+Dim LogisticSigmoid::dim_forward(const vector<Dim>& xs) const {
+  assert(xs.size() == 1);
+  return xs[0];
+}
+
+string BinaryLogLoss::as_string(const vector<string>& arg_names) const {
+  ostringstream os;
+  os << "binary_log_loss(" << arg_names[0] << ", " << arg_names[1] << ')';
+  return os.str();
+}
+
+Dim BinaryLogLoss::dim_forward(const vector<Dim>& xs) const {
+  assert(xs.size() == 2);
+  if (xs[0].rows() != 2 && xs[0].ndims() != 1) {
+    ostringstream s; s << "Bad input dimensions in BinaryLogLoss: " << xs;
+    throw std::invalid_argument(s.str());
+  }
+  if (xs[1].rows() != 2 && xs[1].ndims() != 1) {
+    ostringstream s; s << "Bad input dimensions in BinaryLogLoss: " << xs;
+    throw std::invalid_argument(s.str());
+  }
+  return Dim({1}, max(xs[0].bd, xs[1].bd));
+}
+
+} // namespace cnn
