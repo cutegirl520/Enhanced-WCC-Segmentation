@@ -229,4 +229,45 @@ cdef extern from "cnn/rnn.h" namespace "cnn":
     cdef cppclass CRNNBuilder "cnn::RNNBuilder":
         void new_graph(CComputationGraph &cg)
         void start_new_sequence(vector[CExpression] ces)
-       
+        CExpression add_input(CExpression &x)
+        CExpression add_input(CRNNPointer prev, CExpression &x)
+        void rewind_one_step()
+        CExpression back()
+        vector[CExpression] final_h()
+        vector[CExpression] final_s()
+        vector[CExpression] get_h(CRNNPointer i)
+        vector[CExpression] get_s(CRNNPointer i)
+        CRNNPointer state()
+
+# TODO unify with LSTMBuilder using inheritance
+cdef extern from "cnn/rnn.h" namespace "cnn":
+    #cdef cppclass RNNBuilder "cnn::RNNBuilder":
+    cdef cppclass CSimpleRNNBuilder  "cnn::SimpleRNNBuilder" (CRNNBuilder):
+        CSimpleRNNBuilder(unsigned layers, unsigned input_dim, unsigned hidden_dim, CModel *model)
+        #void new_graph(CComputationGraph &cg)
+        #void start_new_sequence(vector[CExpression] ces)
+        #CExpression add_input(CExpression &x)
+        #CExpression add_input(CRNNPointer prev, CExpression &x)
+        #void rewind_one_step()
+        #CExpression back()
+        #vector[CExpression] final_h()
+        #vector[CExpression] final_s()
+        #vector[CExpression] get_h(CRNNPointer i)
+        #vector[CExpression] get_s(CRNNPointer i)
+        #CRNNPointer state()
+
+cdef extern from "cnn/lstm.h" namespace "cnn":
+    cdef cppclass CLSTMBuilder "cnn::LSTMBuilder" (CRNNBuilder):
+        CLSTMBuilder(unsigned layers, unsigned input_dim, unsigned hidden_dim, CModel *model)
+        #void new_graph(CComputationGraph &cg)
+        #void start_new_sequence(vector[CExpression] ces)
+        #CExpression add_input(CExpression &x)
+        #CExpression add_input(CRNNPointer prev, CExpression &x)
+        #void rewind_one_step()
+        #CExpression back()
+        #vector[CExpression] final_h()
+        #vector[CExpression] final_s()
+        #vector[CExpression] get_h(CRNNPointer i)
+        #vector[CExpression] get_s(CRNNPointer i)
+        #CRNNPointer state()
+
