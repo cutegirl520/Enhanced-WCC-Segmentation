@@ -51,4 +51,21 @@ int main(int argc, char** argv) {
   // train the parameters
   for (unsigned iter = 0; iter < ITERATIONS; ++iter) {
     double loss = 0;
-    for (uns
+    for (unsigned mi = 0; mi < 4; ++mi) {
+      bool x1 = mi % 2;
+      bool x2 = (mi / 2) % 2;
+      x_values[0] = x1 ? 1 : -1;
+      x_values[1] = x2 ? 1 : -1;
+      y_value = (x1 != x2) ? 1 : -1;
+      loss += as_scalar(cg.forward());
+      cg.backward();
+      sgd.update(1.0);
+    }
+    sgd.update_epoch();
+    loss /= 4;
+    cerr << "E = " << loss << endl;
+  }
+  boost::archive::text_oarchive oa(cout);
+  oa << m;
+}
+
