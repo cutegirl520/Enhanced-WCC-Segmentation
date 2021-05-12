@@ -662,3 +662,520 @@ struct SegmentalRNN {
         }
       }
       // fwd[j] = f[max_ind];
+      v_fwd[j] = v_f[max_ind];
+      it.push_back(ijt[max_ind]);
+      // cerr << "max value = \t" << as_scalar(cg.get_value(fwd[j])) << endl;
+    }
+    // for(auto j = 1; j <= len; ++j) {
+    //   cerr << j << "\t" << std::get<0>(it[j]) << "\t" << std::get<1>(it[j]) << "\t" << std::get<2>(it[j]) << endl;
+    // }
+    auto cur_j = len;
+    vector<tuple<int, int, unsigned>> pred;
+    while(cur_j > 0){
+      auto cur_i = std::get<0>(it[cur_j]);
+      pred.push_back(make_tuple(cur_i, cur_j, std::get<2>(it[cur_j])));
+      yz_pred.push_back(make_pair(std::get<2>(it[cur_j]), cur_j - cur_i));
+      cur_j = cur_i;
+    }
+    std::reverse(pred.begin(),pred.end());
+    std::reverse(yz_pred.begin(),yz_pred.end());
+  }
+
+  void ViterbiDecode(vector<Expression>& xins,
+                           const vector<pair<int,int>>& yz_gold,  // .first = y, .second = duration (z)
+                           ComputationGraph& cg,
+                           vector<pair<int, int>> &yz_pred,
+                           int max_seg_len = 0) {
+    
+    int len = xins.size();
+    unordered_map<PKey, Expression> p_map = ConstructSegmentMap(xins, cg, max_seg_len);
+
+    // Compute everything at this step and use them later
+    cg.forward();
+
+    PureDecode(len, p_map, cg, yz_pred, max_seg_len);
+    return;
+  }
+
+  Parameters* p_d2h1, *p_y2h1, *p_fwd2h1, *p_rev2h1, *p_h1b;
+  Parameters* p_h12h2, *p_h2b;
+  Parameters* p_h22o, *p_ob;
+  // used in the context awareness 
+  Parameters* p_c_start, *p_c_end;
+  Parameters* p_cf2h1, *p_ce2h1;
+};
+
+// a a 0 1 a ||| O:1 O:1 N:2 O:1
+pair<vector<int>,vector<pair<int,int>>> ParseTrainingInstance(const std::string& line, cnn::Dict& d, cnn::Dict& td, bool test_only = false) {
+  std::istringstream in(line);
+  std::string word;
+  std::string sep = "|||";
+  vector<int> x;
+  vector<pair<int,int>> yz;
+  while(1) {
+    in >> word;
+    if (!test_only){
+      if (word == sep) break;
+    }else{
+      if (word == sep) break;
+      if (!in) break;
+    }
+    x.push_back(d.Convert(word));
+  }
+  if(!test_only){
+    while(1) {
+      in >> word;
+      if (!in) break;
+      size_t p = word.rfind(':');
+      if (p == string::npos || p == 0 || p == (word.size() - 1)) {
+        cerr << "mal-formed label: " << word << endl;
+        abort();
+      }
+      int y = td.Convert(word.substr(0, p));
+      int z = atoi(word.substr(p+1).c_str());
+      if (z > DATA_MAX_SEG_LEN){
+        DATA_MAX_SEG_LEN = z;
+      }
+      yz.push_back(make_pair(y,z));
+    }
+  }
+  return make_pair(x, yz);
+}
+
+bool inline check_max_seg(const vector<pair<int,int>>& yz, int max_seg_len = 0){
+  if (max_seg_len == 0) return true;
+  for (unsigned ri = 0; ri < yz.size(); ++ri) {
+    int dur = yz[ri].second;
+    if (max_seg_len && dur > max_seg_len) {
+      cerr << "SKIP: max_seg_len=" << max_seg_len << " but reference duration is " << dur << endl;
+      return false;
+    }
+  }
+  return true;
+}
+
+double evaluate(vector<vector<pair<int,int>>>& yz_preds,
+                vector<vector<pair<int,int>>>& yz_golds,
+                cnn::Dict& d,
+                cnn::Dict& td){
+  assert(yz_preds.size() == yz_golds.size());
+  int p_correct = 0;
+  int r_correct = 0;
+  int p_w_t_correct = 0;
+  int r_w_t_correct = 0;
+  int p_total = 0; 
+  int r_total = 0;
+  int p_w_t_total = 0;
+  int r_w_t_total = 0;
+  int tag_o = ner_tagging ? td.Convert("O") : -1;
+  for (unsigned int i = 0; i < yz_preds.size(); i++){
+    // for sentence i
+    std::set<pair<int,int>> gold;
+    std::set<pair<int,int>> pred;
+    std::set<tuple<int,int,int>> gold_w_tag;
+    std::set<tuple<int,int,int>> pred_w_tag;
+    vector<pair<int,int>>& yz_pred = yz_preds[i];
+    vector<pair<int,int>>& yz_gold = yz_golds[i];
+    int cur = 0;
+    for(auto e : yz_pred){
+
+      if (ner_tagging && (e.first == tag_o) ){
+
+      }else{
+        pred.insert(make_pair(cur, cur + e.second));
+        pred_w_tag.insert(make_tuple(e.first, cur, cur + e.second));
+      }
+      cur += e.second;
+    }
+    cur = 0;
+    for(auto e : yz_gold){
+      if (ner_tagging && (e.first == tag_o) ){
+
+      }else{
+        gold.insert(make_pair(cur, cur + e.second));
+        gold_w_tag.insert(make_tuple(e.first, cur, cur + e.second));
+      }
+      cur += e.second;
+    }
+
+    for (auto e : pred){
+      if(gold.find(e) != gold.end()){
+        p_correct++;
+      }
+      p_total++;
+    }
+    for (auto e : gold){
+      if(pred.find(e) != pred.end()){
+        r_correct++;
+      }
+      r_total++;
+    }
+
+    for (auto e : pred_w_tag){
+      if(gold_w_tag.find(e) != gold_w_tag.end()){
+        p_w_t_correct++;
+      }
+      p_w_t_total++;
+    }
+    for (auto e : gold_w_tag){
+      if(pred_w_tag.find(e) != pred_w_tag.end()){
+        r_w_t_correct++;
+      }
+      r_w_t_total++;
+    }
+  }
+  double p = (double)(p_correct) / (double)(p_total);
+  double r = (double)(r_correct) / (double)(r_total);
+  double f = 2.0 * ((p * r) / (p + r));
+  cerr << "seg: p: " << p << "\tr: " << r << "\tf: " << f << endl;
+
+  p = (double)(p_w_t_correct) / (double)(p_w_t_total);
+  r = (double)(r_w_t_correct) / (double)(r_w_t_total);
+  f = 2.0 * ((p * r) / (p + r));
+  cerr << "tag: p: " << p << "\tr: " << r << "\tf: " << f << endl;
+  return f; 
+
+}
+
+void test_only(SegmentalRNN<LSTMBuilder>& segrnn,
+          vector<pair<vector<int>,vector<pair<int,int>>>>& test_set,
+          int max_seg_len = 0)
+{
+  for (auto& sent : test_set) {
+    ComputationGraph cg;
+    vector<pair<int, int>> yz_pred;
+    vector<Expression> xins = segrnn.ConstructInput(sent.first, cg);
+    segrnn.ViterbiDecode(xins, sent.second, cg, yz_pred, max_seg_len);
+    unsigned int i;
+    for(i = 0; i < yz_pred.size()-1; ++i){
+      auto pred = yz_pred[i];
+      cout << segrnn.td.Convert(pred.first) << ":" << pred.second << " ";
+    }
+    if(i >= 0 && (i == yz_pred.size()-1)){
+      auto pred = yz_pred[i];
+      cout << segrnn.td.Convert(pred.first) << ":" << pred.second;
+    }
+    cout << endl;
+  }
+}
+
+void read_file(string file_path,
+                     cnn::Dict& d,
+                     cnn::Dict& td,
+                     vector<pair<vector<int>,vector<pair<int,int>>>>& read_set,
+                     bool test_only = false)
+{
+  read_set.clear();
+  string line;
+  cerr << "Reading data from " << file_path << "...\n";
+  {
+    ifstream in(file_path);
+    assert(in);
+    while(getline(in, line)) {
+      read_set.push_back(ParseTrainingInstance(line, d, td, test_only));
+    }
+  }
+  cerr << "Reading data from " << file_path << " finished \n";
+}
+
+void save_models(string model_file_prefix,
+                    cnn::Dict& d,
+                    cnn::Dict& td,
+                    Model& model){
+  cerr << "saving models..." << endl;
+
+  const string f_name = model_file_prefix + ".params";
+  ofstream out(f_name);
+  boost::archive::text_oarchive oa(out);
+  oa << model;
+  out.close();
+
+  const string f_d_name = model_file_prefix + ".dict";
+  ofstream out_d(f_d_name);
+  boost::archive::text_oarchive oa_d(out_d);
+  oa_d << d;
+  out_d.close();
+
+  const string f_td_name = model_file_prefix + ".tdict";
+  ofstream out_td(f_td_name);
+  boost::archive::text_oarchive oa_td(out_td);
+  oa_td << td;
+  out_td.close();
+  cerr << "saving models finished" << endl;
+}
+
+void load_models(string model_file_prefix,
+                 Model& model){
+  cerr << "loading models..." << endl;
+
+  string fname = model_file_prefix + ".params";
+  ifstream in(fname);
+  boost::archive::text_iarchive ia(in);
+  ia >> model;
+  in.close();
+
+  cerr << "loading models finished" << endl;
+}
+
+void load_dicts(string model_file_prefix,
+                 cnn::Dict& d,
+                 cnn::Dict& td)
+{
+  cerr << "loading dicts..." << endl;
+  string f_d_name = model_file_prefix + ".dict";
+  ifstream in_d(f_d_name);
+  boost::archive::text_iarchive ia_d(in_d);
+  ia_d >> d;
+  in_d.close();
+
+  string f_td_name = model_file_prefix + ".tdict";
+  ifstream in_td(f_td_name);
+  boost::archive::text_iarchive ia_td(in_td);
+  ia_td >> td;
+  in_td.close();
+  cerr << "loading dicts finished" << endl;
+}
+
+unsigned int edit_distance(const std::string& s1, const std::string& s2)
+{
+  const std::size_t len1 = s1.size(), len2 = s2.size();
+  std::vector<std::vector<unsigned int>> d(len1 + 1, std::vector<unsigned int>(len2 + 1));
+
+  d[0][0] = 0;
+  for(unsigned int i = 1; i <= len1; ++i) d[i][0] = i;
+    for(unsigned int i = 1; i <= len2; ++i) d[0][i] = i;
+      for(unsigned int i = 1; i <= len1; ++i)
+        for(unsigned int j = 1; j <= len2; ++j)
+          d[i][j] = std::min({ d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (s1[i - 1] == s2[j - 1] ? 0 : 1) });
+        return d[len1][len2];
+}
+
+double evaluate_partial(vector<vector<pair<int,int>>>& yz_preds,
+                       vector<vector<pair<int,int>>>& yz_golds,
+                       cnn::Dict& d,
+                       cnn::Dict& td){
+  assert(yz_preds.size() == yz_golds.size());
+
+  int total_length_gold = 0;
+  int total_length_pred = 0;
+  int total_editing_distance = 0;
+
+  for (int i = 0; i < yz_preds.size(); i++){
+    // for sentence i
+    vector<pair<int,int>>& yz_pred = yz_preds[i];
+    vector<pair<int,int>>& yz_gold = yz_golds[i];
+    std::string pred_s = "";
+    for (auto e : yz_pred){
+      pred_s.append(td.Convert(e.first));
+      total_length_pred++;
+    } 
+    std::string gold_s = "";
+    for (auto e : yz_gold){
+      gold_s.append(td.Convert(e.first));
+      total_length_gold++;
+    }
+    auto dis = edit_distance(pred_s, gold_s);
+    total_editing_distance += dis;
+    
+  }
+  cerr << "total_editing_distance: " << total_editing_distance << "\ttotal_length_gold: " << total_length_gold << "\ttotal_length_pred: " << total_length_pred << endl;
+  double score = (((float) total_editing_distance) * 2.0)/((float)(total_length_gold + total_length_pred));
+  cerr << "score: " << score << endl;
+  return score; 
+}
+
+double predict_and_evaluate(SegmentalRNN<LSTMBuilder>& segrnn,
+                            const vector<pair<vector<int>,vector<pair<int,int>>>>& input_set,
+                            bool partial,
+                            int max_seg_len,
+                            string set_name = "DEV"
+                            ){
+  vector<vector<pair<int,int>>> yz_preds;
+  vector<vector<pair<int,int>>> yz_golds;
+  for (auto& sent : input_set) {
+    ComputationGraph cg;
+    vector<pair<int, int>> yz_pred;
+    vector<Expression> xins = segrnn.ConstructInput(sent.first, cg);
+    segrnn.ViterbiDecode(xins, sent.second, cg, yz_pred, max_seg_len);
+    yz_golds.push_back(sent.second);
+    yz_preds.push_back(yz_pred);
+  }
+  
+  double f1 = evaluate(yz_preds, yz_golds, segrnn.d, segrnn.td);
+  double f2 = evaluate_partial(yz_preds, yz_golds, segrnn.d, segrnn.td);
+
+  double f = partial ? f2 : f1;
+  cerr << set_name << endl;
+  return f;
+}
+
+
+int main(int argc, char** argv) {
+  cnn::Initialize(argc, argv);
+  int test_max_seg_len;
+  int max_consider_sentence_len;
+  unsigned dev_every_i_reports;
+  po::options_description desc("Allowed options");
+  desc.add_options()
+      ("help", "produce help message")
+      ("train", po::bool_switch()->default_value(false), "the training mode")
+      ("hinge", po::bool_switch()->default_value(false), "training use the hinge loss")
+      ("partial", po::bool_switch()->default_value(false), "the partially supervised training mode, where we don't have z")
+      ("train_max_seg_len", po::value<int>(), "in the partially supervised training mode, the max len we consider")
+      ("load_original_model", po::bool_switch()->default_value(false), "continuing the training by loading the model, only valid during training")
+      ("max_consider_sentence_len", po::value<int>(&max_consider_sentence_len)->default_value(1000))
+      ("dropout_rate", po::value<float>(), "dropout rate, also indicts using dropout during training")
+      ("evaluate_test", po::bool_switch()->default_value(false), "evaluate test set every training iteration")
+      ("test", po::bool_switch()->default_value(false), "the test mode")
+      ("test_max_seg_len", po::value<int>(&test_max_seg_len)->default_value(30))
+      ("dev_every_i_reports", po::value<unsigned>(&dev_every_i_reports)->default_value(1000))
+      ("train_file", po::value<string>(), "path of the train file")
+      ("dev_file", po::value<string>(), "path of the dev file")
+      ("test_file", po::value<string>(), "path of the test file")
+      ("model_file_prefix", po::value<string>(), "prefix path of the model files (and dictionaries)")
+      ("upe", po::value<string>(), "use pre-trained word embeding")
+  ;
+
+  po::variables_map vm;
+  po::store(po::parse_command_line(argc, argv, desc), vm);
+  po::notify(vm);
+
+  if (vm.count("help")) {
+      cerr << desc << "\n";
+      return 1;
+  }
+
+  if(vm["train"].as<bool>()){
+    if (vm.count("upe")){
+      cerr << "using pre-trained embeding from " << vm["upe"].as<string>() << endl;
+      use_pretrained_embeding = true;
+      pretrained_embeding = vm["upe"].as<string>();
+    }else{
+      use_pretrained_embeding = false;
+      cerr << "not using pre-trained embeding" << endl;
+    }
+
+    if (vm.count("dropout_rate")){
+      use_dropout = true;
+      dropout_rate = vm["dropout_rate"].as<float>();
+      cerr << "using dropout training, dropout rate: " << dropout_rate << endl;
+    }else{
+      use_dropout = false;
+    }
+
+    // create two dictionaries
+    cnn::Dict d;
+    cnn::Dict td;
+    vector<pair<vector<int>,vector<pair<int,int>>>> training, dev, test;
+    read_file(vm["train_file"].as<string>(), d, td, training);
+
+    d.Freeze();  // no new word types allowed
+    td.Freeze(); // no new tag types allowed
+    d.SetUnk("<UNK>"); // set UNK to allow the unseen character in the dev and test set
+
+    read_file(vm["dev_file"].as<string>(), d, td, dev);
+    if (vm["evaluate_test"].as<bool>()){
+      read_file(vm["test_file"].as<string>(), d, td, test);
+    }
+
+    Model model;
+    // auto sgd = new SimpleSGDTrainer(&model);
+    auto sgd = new AdamTrainer(&model, 1e-6, 0.0005, 0.01, 0.9999, 1e-8);
+    int max_seg_len = DATA_MAX_SEG_LEN + 1;
+    if(vm.count("train_max_seg_len")){
+      max_seg_len = vm["train_max_seg_len"].as<int>();
+    }
+
+    cerr << "set max_seg_len = " << max_seg_len << endl;
+
+    SegmentalRNN<LSTMBuilder> segrnn(model, d, td);
+
+    if(vm["load_original_model"].as<bool>()){
+      load_models(vm["model_file_prefix"].as<string>(), model);
+    }
+
+    double f_best = 0;
+    unsigned report_every_i = 10;
+
+    unsigned si = training.size();
+    vector<unsigned> order(training.size());
+    for (unsigned i = 0; i < order.size(); ++i) order[i] = i;
+    bool first = true;
+    int report = 0;
+    unsigned lines = 0;
+    while(1) {
+      Timer iteration("completed in");
+      double loss = 0;
+      unsigned ttags = 0;
+      double correct = 0;
+      for (unsigned i = 0; i < report_every_i; ++i) {
+        if (si == training.size()) {
+          si = 0;
+          if (first) { first = false; } else { sgd->update_epoch(); }
+          cerr << "**SHUFFLE\n";
+          shuffle(order.begin(), order.end(), *rndeng);
+        }
+
+        // build graph for this instance
+        ComputationGraph cg;
+        auto& sent = training[order[si]];
+        ++si;
+        if(check_max_seg(sent.second, max_seg_len)){
+          if (sent.first.size() > max_consider_sentence_len){
+            cerr << "skip a sentence because its length " << sent.first.size() << " > " << max_consider_sentence_len << endl;
+            continue;
+          }
+          vector<Expression> xins = segrnn.ConstructInput(sent.first, cg);
+          if(vm["partial"].as<bool>()){
+              if(vm["hinge"].as<bool>()){
+                cerr << "Hingle Loss for partially supervised setting is not avaiable at this moment." << endl;
+                abort();
+              }else{
+                segrnn.PartiallySupervisedCRFLoss(xins, sent.second, cg, max_seg_len);
+              }
+          }else{
+            if(vm["hinge"].as<bool>()){
+              segrnn.SupervisedHingeLoss(xins, sent.second, cg, max_seg_len);
+            }else{
+              segrnn.SupervisedCRFLoss(xins, sent.second, cg, max_seg_len);
+            }
+          }
+          ttags += sent.second.size();
+          loss += as_scalar(cg.forward());
+          cg.backward();
+          sgd->update(1.0);
+        }
+        ++lines;
+      }
+      sgd->status();
+      cerr << " E = " << (loss / ttags) << " ppl=" << exp(loss / ttags) << " (acc=" << (correct / ttags) << ") ";
+      report++;
+      if (report % dev_every_i_reports == 0) {
+        double f = predict_and_evaluate(segrnn, dev, vm["partial"].as<bool>(), max_seg_len);
+        if (f > f_best) {
+          f_best = f;
+          save_models(vm["model_file_prefix"].as<string>(), d, td, model);
+        }
+        if (vm["evaluate_test"].as<bool>()){
+          predict_and_evaluate(segrnn, test, vm["partial"].as<bool>(), max_seg_len, "TEST");
+        }
+      }
+    }
+    delete sgd;
+  }else if(vm["test"].as<bool>()){
+    use_pretrained_embeding = false;
+    use_dropout = false;
+    Model model;
+    cnn::Dict d;
+    cnn::Dict td;
+    load_dicts(vm["model_file_prefix"].as<string>(), d, td);
+    SegmentalRNN<LSTMBuilder> segrnn(model, d, td);
+    load_models(vm["model_file_prefix"].as<string>(), model);
+    vector<pair<vector<int>,vector<pair<int,int>>>> test;
+    read_file(vm["test_file"].as<string>(), d, td, test, true);
+    
+    test_only(segrnn, test);
+  }
+
+}
+
