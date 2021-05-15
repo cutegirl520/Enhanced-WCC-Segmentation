@@ -219,3 +219,180 @@ int main(int argc, char** argv) {
         abort();
       }
     }
+  }
+
+  Trainer* sgd = new SimpleSGDTrainer(&model);
+  sgd->eta0 = sgd->eta = conf["eta0"].as<float>();
+  RNNLanguageModel<LSTMBuilder> lm(model);
+
+  bool has_model_to_load = conf.count("model");
+  if (has_model_to_load) {
+    string fname = conf["model"].as<string>();
+    cerr << "Reading parameters from " << fname << "...\n";
+    ifstream in(fname);
+    assert(in);
+    boost::archive::binary_iarchive ia(in);
+    ia >> model;
+  }
+
+  bool LEARN = conf.count("learn");
+
+  if (LEARN) {
+    int dlc = 0;
+    int dtoks = 0;
+    if (conf.count("dev") == 0) {
+      cerr << "You must specify a development set (--dev file.txt) with --learn" << endl;
+      abort();
+    } else {
+      string devf = conf["dev"].as<string>();
+      cerr << "Reading dev data from " << devf << " ...\n";
+      ifstream in(devf);
+      assert(in);
+      while(getline(in, line)) {
+        ++dlc;
+        dev.push_back(ReadSentence(line, &d));
+        dtoks += dev.back().size();
+        if (dev.back().front() == kSOS || dev.back().back() == kEOS) {
+          cerr << "Dev sentence in " << argv[2] << ":" << tlc << " started with <s> or ended with </s>\n";
+          abort();
+        }
+      }
+      cerr << dlc << " lines, " << dtoks << " tokens\n";
+    }
+    ostringstream os;
+    os << "lm"
+       << '_' << DROPOUT
+       << '_' << LAYERS
+       << '_' << INPUT_DIM
+       << '_' << HIDDEN_DIM
+       << "-pid" << getpid() << ".params";
+    const string fname = os.str();
+    cerr << "Parameters will be written to: " << fname << endl;
+    double best = 9e+99;
+    unsigned report_every_i = 100;
+    unsigned dev_every_i_reports = 25;
+    unsigned si = training.size();
+    if (report_every_i > si) report_every_i = si;
+    vector<unsigned> order(training.size());
+    for (unsigned i = 0; i < order.size(); ++i) order[i] = i;
+    bool first = true;
+    int report = 0;
+    double lines = 0;
+    int completed_epoch = -1;
+    while(!INTERRUPTED) {
+      if (SAMPLE) lm.RandomSample();
+      Timer iteration("completed in");
+      double loss = 0;
+      unsigned chars = 0;
+      for (unsigned i = 0; i < report_every_i; ++i) {
+        if (si == training.size()) {
+          si = 0;
+          if (first) { first = false; } else { sgd->update_epoch(); }
+          cerr << "**SHUFFLE\n";
+          completed_epoch++;
+          if (eta_decay_onset_epoch && completed_epoch >= (int)eta_decay_onset_epoch)
+            sgd->eta *= eta_decay_rate;
+          shuffle(order.begin(), order.end(), *rndeng);
+        }
+
+        // build graph for this instance
+        ComputationGraph cg;
+        auto& sent = training[order[si]];
+        chars += sent.size();
+        ++si;
+        lm.BuildLMGraph(sent, cg, DROPOUT > 0.f);
+        loss += as_scalar(cg.forward());
+        cg.backward();
+        sgd->update();
+        ++lines;
+      }
+      report++;
+      cerr << '#' << report << " [epoch=" << (lines / training.size()) << " eta=" << sgd->eta << "] E = " << (loss / chars) << " ppl=" << exp(loss / chars) << ' ';
+
+      // show score on dev data?
+      if (report % dev_every_i_reports == 0) {
+        double dloss = 0;
+        int dchars = 0;
+        for (auto& sent : dev) {
+          ComputationGraph cg;
+          lm.BuildLMGraph(sent, cg, false);
+          dloss += as_scalar(cg.forward());
+          dchars += sent.size();
+        }
+        if (dloss < best) {
+          best = dloss;
+          ofstream out(fname);
+          boost::archive::binary_oarchive oa(out);
+          oa << model;
+        }
+        cerr << "\n***DEV [epoch=" << (lines / training.size()) << "] E = " << (dloss / dchars) << " ppl=" << exp(dloss / dchars) << ' ';
+      }
+    }
+  }  // train?
+  if (conf.count("test")) {
+    cerr << "Evaluating test data...\n";
+    double tloss = 0;
+    int tchars = 0;
+    for (auto& sent : test) {
+      ComputationGraph cg;
+      lm.BuildLMGraph(sent, cg, false);
+      tloss += as_scalar(cg.forward());
+      tchars += sent.size();
+    }
+    cerr << "TEST                -LLH = " << tloss << endl;
+    cerr << "TEST CROSS ENTOPY (NATS) = " << (tloss / tchars) << endl;
+    cerr << "TEST                 PPL = " << exp(tloss / tchars) << endl;
+  }
+
+  // N-best scoring
+  if (conf.count("nbest")) {
+    // cdec: index ||| hypothesis ||| feature=val ... ||| ...
+    // Moses: index ||| hypothesis ||| feature= val(s) ... ||| ...
+    const int HYP_FIELD = 1;
+    const int FEAT_FIELD = 2;
+    const string FEAT_NAME = "RNNLM";
+    // Input
+    string nbestf = conf["nbest"].as<string>();
+    cerr << "Scoring N-best list " << nbestf << " ..." << endl;
+    shared_ptr<istream> in;
+    if (nbestf == "-") {
+      in.reset(&cin, [](...){});
+    } else {
+      in.reset(new ifstream(nbestf));
+    }
+    // Split on |||, consume whitespace
+    boost::regex delim("\\s*\\|\\|\\|\\s*");
+    boost::sregex_token_iterator end;
+    // Match spacing of input file
+    string sep = "=";
+    bool sep_detected = false;
+    // Input lines
+    while (getline(*in, line)) {
+      vector<string> fields;
+      boost::sregex_token_iterator it(line.begin(), line.end(), delim, -1);
+      while (it != end) {
+        fields.push_back(*it++);
+      }
+      // Check sep if needed
+      if (!sep_detected) {
+        sep_detected = true;
+        int i = fields[FEAT_FIELD].find("=");
+        if (fields[FEAT_FIELD].substr(i + 1, 1) == " ") {
+          sep = "= ";
+        }
+      }
+      // Score hypothesis
+      ComputationGraph cg;
+      lm.BuildLMGraph(ReadSentence(fields[HYP_FIELD], &d), cg, false);
+      double loss = as_scalar(cg.forward());
+      // Add score
+      ostringstream os;
+      os << fields[FEAT_FIELD] << " " << FEAT_NAME << sep << loss;
+      fields[FEAT_FIELD] = os.str();
+      // Write augmented line
+      cout << boost::algorithm::join(fields, " ||| ") << endl;
+    }
+  }
+
+  delete sgd;
+}
