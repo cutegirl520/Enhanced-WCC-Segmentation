@@ -582,4 +582,69 @@ void LDLT<_MatrixType,_UpLo>::_solve_impl(const RhsType &rhs, DstType &dst) cons
   * This version avoids a copy when the right hand side matrix b is not
   * needed anymore.
   *
-  * \sa LDLT::solve(), MatrixB
+  * \sa LDLT::solve(), MatrixBase::ldlt()
+  */
+template<typename MatrixType,int _UpLo>
+template<typename Derived>
+bool LDLT<MatrixType,_UpLo>::solveInPlace(MatrixBase<Derived> &bAndX) const
+{
+  eigen_assert(m_isInitialized && "LDLT is not initialized.");
+  eigen_assert(m_matrix.rows() == bAndX.rows());
+
+  bAndX = this->solve(bAndX);
+
+  return true;
+}
+
+/** \returns the matrix represented by the decomposition,
+ * i.e., it returns the product: P^T L D L^* P.
+ * This function is provided for debug purpose. */
+template<typename MatrixType, int _UpLo>
+MatrixType LDLT<MatrixType,_UpLo>::reconstructedMatrix() const
+{
+  eigen_assert(m_isInitialized && "LDLT is not initialized.");
+  const Index size = m_matrix.rows();
+  MatrixType res(size,size);
+
+  // P
+  res.setIdentity();
+  res = transpositionsP() * res;
+  // L^* P
+  res = matrixU() * res;
+  // D(L^*P)
+  res = vectorD().real().asDiagonal() * res;
+  // L(DL^*P)
+  res = matrixL() * res;
+  // P^T (LDL^*P)
+  res = transpositionsP().transpose() * res;
+
+  return res;
+}
+
+#ifndef __CUDACC__
+/** \cholesky_module
+  * \returns the Cholesky decomposition with full pivoting without square root of \c *this
+  * \sa MatrixBase::ldlt()
+  */
+template<typename MatrixType, unsigned int UpLo>
+inline const LDLT<typename SelfAdjointView<MatrixType, UpLo>::PlainObject, UpLo>
+SelfAdjointView<MatrixType, UpLo>::ldlt() const
+{
+  return LDLT<PlainObject,UpLo>(m_matrix);
+}
+
+/** \cholesky_module
+  * \returns the Cholesky decomposition with full pivoting without square root of \c *this
+  * \sa SelfAdjointView::ldlt()
+  */
+template<typename Derived>
+inline const LDLT<typename MatrixBase<Derived>::PlainObject>
+MatrixBase<Derived>::ldlt() const
+{
+  return LDLT<PlainObject>(derived());
+}
+#endif // __CUDACC__
+
+} // end namespace Eigen
+
+#endif // EIGEN_LDLT_H
