@@ -117,4 +117,60 @@ class vml_assign_traits
 
   
 EIGEN_MKL_VML_DECLARE_UNARY_CALLS(sin,   Sin,   LA)
-EIGEN_MKL_VML_DECLARE_UNARY_CALLS(asin
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS(asin,  Asin,  LA)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS(sinh,  Sinh,  LA)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS(cos,   Cos,   LA)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS(acos,  Acos,  LA)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS(cosh,  Cosh,  LA)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS(tan,   Tan,   LA)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS(atan,  Atan,  LA)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS(tanh,  Tanh,  LA)
+// EIGEN_MKL_VML_DECLARE_UNARY_CALLS(abs,   Abs,    _)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS(exp,   Exp,   LA)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS(log,   Ln,    LA)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS(log10, Log10, LA)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS(sqrt,  Sqrt,  _)
+
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS_REAL(square, Sqr,   _)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS_CPLX(arg, Arg,      _)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS_REAL(round, Round,  _)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS_REAL(floor, Floor,  _)
+EIGEN_MKL_VML_DECLARE_UNARY_CALLS_REAL(ceil,  Ceil,   _)
+
+#define EIGEN_MKL_VML_DECLARE_POW_CALL(EIGENOP, VMLOP, EIGENTYPE, VMLTYPE, VMLMODE)                                           \
+  template< typename DstXprType, typename SrcXprNested, typename Plain>                                                       \
+  struct Assignment<DstXprType, CwiseBinaryOp<scalar_##EIGENOP##_op<EIGENTYPE,EIGENTYPE>, SrcXprNested,                       \
+                    const CwiseNullaryOp<internal::scalar_constant_op<EIGENTYPE>,Plain> >, assign_op<EIGENTYPE,EIGENTYPE>,    \
+                   Dense2Dense, typename enable_if<vml_assign_traits<DstXprType,SrcXprNested>::EnableVml>::type> {            \
+    typedef CwiseBinaryOp<scalar_##EIGENOP##_op<EIGENTYPE,EIGENTYPE>, SrcXprNested,                                           \
+                    const CwiseNullaryOp<internal::scalar_constant_op<EIGENTYPE>,Plain> > SrcXprType;                         \
+    static void run(DstXprType &dst, const SrcXprType &src, const assign_op<EIGENTYPE,EIGENTYPE> &/*func*/) {                 \
+      eigen_assert(dst.rows() == src.rows() && dst.cols() == src.cols());                                                     \
+      VMLTYPE exponent = reinterpret_cast<const VMLTYPE&>(src.rhs().functor().m_other);                                       \
+      if(vml_assign_traits<DstXprType,SrcXprNested>::Traversal==LinearTraversal)                                              \
+      {                                                                                                                       \
+        VMLOP( dst.size(), (const VMLTYPE*)src.lhs().data(), exponent,                                                        \
+              (VMLTYPE*)dst.data() EIGEN_PP_EXPAND(EIGEN_VMLMODE_EXPAND_##VMLMODE) );                                         \
+      } else {                                                                                                                \
+        const Index outerSize = dst.outerSize();                                                                              \
+        for(Index outer = 0; outer < outerSize; ++outer) {                                                                    \
+          const EIGENTYPE *src_ptr = src.IsRowMajor ? &(src.lhs().coeffRef(outer,0)) :                                        \
+                                                      &(src.lhs().coeffRef(0, outer));                                        \
+          EIGENTYPE *dst_ptr = dst.IsRowMajor ? &(dst.coeffRef(outer,0)) : &(dst.coeffRef(0, outer));                         \
+          VMLOP( dst.innerSize(), (const VMLTYPE*)src_ptr, exponent,                                                          \
+                 (VMLTYPE*)dst_ptr EIGEN_PP_EXPAND(EIGEN_VMLMODE_EXPAND_##VMLMODE));                                          \
+        }                                                                                                                     \
+      }                                                                                                                       \
+    }                                                                                                                         \
+  };
+  
+EIGEN_MKL_VML_DECLARE_POW_CALL(pow, vmsPowx, float,    float,         LA)
+EIGEN_MKL_VML_DECLARE_POW_CALL(pow, vmdPowx, double,   double,        LA)
+EIGEN_MKL_VML_DECLARE_POW_CALL(pow, vmcPowx, scomplex, MKL_Complex8,  LA)
+EIGEN_MKL_VML_DECLARE_POW_CALL(pow, vmzPowx, dcomplex, MKL_Complex16, LA)
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_ASSIGN_VML_H
