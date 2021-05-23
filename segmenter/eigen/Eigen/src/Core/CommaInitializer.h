@@ -94,3 +94,74 @@ struct CommaInitializer
       eigen_assert(m_row+m_currentBlockRows<=m_xpr.rows()
         && "Too many rows passed to comma initializer (operator<<)");
     }
+    eigen_assert((m_col<m_xpr.cols() || (m_xpr.cols()==0 && m_col==0))
+      && "Too many coefficients passed to comma initializer (operator<<)");
+    eigen_assert(m_currentBlockRows==other.rows());
+    if (OtherDerived::SizeAtCompileTime != Dynamic)
+      m_xpr.template block<OtherDerived::RowsAtCompileTime != Dynamic ? OtherDerived::RowsAtCompileTime : 1,
+                              OtherDerived::ColsAtCompileTime != Dynamic ? OtherDerived::ColsAtCompileTime : 1>
+                    (m_row, m_col) = other;
+    else
+      m_xpr.block(m_row, m_col, other.rows(), other.cols()) = other;
+    m_col += other.cols();
+    return *this;
+  }
+
+  EIGEN_DEVICE_FUNC
+  inline ~CommaInitializer()
+#if defined VERIFY_RAISES_ASSERT && (!defined EIGEN_NO_ASSERTION_CHECKING) && defined EIGEN_EXCEPTIONS
+  EIGEN_EXCEPTION_SPEC(Eigen::eigen_assert_exception)
+#endif
+  {
+    eigen_assert((m_row+m_currentBlockRows) == m_xpr.rows()
+         && m_col == m_xpr.cols()
+         && "Too few coefficients passed to comma initializer (operator<<)");
+  }
+
+  /** \returns the built matrix once all its coefficients have been set.
+    * Calling finished is 100% optional. Its purpose is to write expressions
+    * like this:
+    * \code
+    * quaternion.fromRotationMatrix((Matrix3f() << axis0, axis1, axis2).finished());
+    * \endcode
+    */
+  EIGEN_DEVICE_FUNC
+  inline XprType& finished() { return m_xpr; }
+
+  XprType& m_xpr;           // target expression
+  Index m_row;              // current row id
+  Index m_col;              // current col id
+  Index m_currentBlockRows; // current block height
+};
+
+/** \anchor MatrixBaseCommaInitRef
+  * Convenient operator to set the coefficients of a matrix.
+  *
+  * The coefficients must be provided in a row major order and exactly match
+  * the size of the matrix. Otherwise an assertion is raised.
+  *
+  * Example: \include MatrixBase_set.cpp
+  * Output: \verbinclude MatrixBase_set.out
+  * 
+  * \note According the c++ standard, the argument expressions of this comma initializer are evaluated in arbitrary order.
+  *
+  * \sa CommaInitializer::finished(), class CommaInitializer
+  */
+template<typename Derived>
+inline CommaInitializer<Derived> DenseBase<Derived>::operator<< (const Scalar& s)
+{
+  return CommaInitializer<Derived>(*static_cast<Derived*>(this), s);
+}
+
+/** \sa operator<<(const Scalar&) */
+template<typename Derived>
+template<typename OtherDerived>
+inline CommaInitializer<Derived>
+DenseBase<Derived>::operator<<(const DenseBase<OtherDerived>& other)
+{
+  return CommaInitializer<Derived>(*static_cast<Derived *>(this), other);
+}
+
+} // end namespace Eigen
+
+#endif // EIGEN_COMMAINITIALIZER_H
