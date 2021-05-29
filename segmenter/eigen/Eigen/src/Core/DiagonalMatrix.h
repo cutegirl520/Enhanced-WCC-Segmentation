@@ -216,4 +216,124 @@ class DiagonalMatrix
   * \param _DiagonalVectorType the type of the vector of diagonal coefficients
   *
   * This class is an expression of a diagonal matrix, but not storing its own vector of diagonal coefficients,
-  * instead wrapping an existing vector expression. It is the ret
+  * instead wrapping an existing vector expression. It is the return type of MatrixBase::asDiagonal()
+  * and most of the time this is the only way that it is used.
+  *
+  * \sa class DiagonalMatrix, class DiagonalBase, MatrixBase::asDiagonal()
+  */
+
+namespace internal {
+template<typename _DiagonalVectorType>
+struct traits<DiagonalWrapper<_DiagonalVectorType> >
+{
+  typedef _DiagonalVectorType DiagonalVectorType;
+  typedef typename DiagonalVectorType::Scalar Scalar;
+  typedef typename DiagonalVectorType::StorageIndex StorageIndex;
+  typedef DiagonalShape StorageKind;
+  typedef typename traits<DiagonalVectorType>::XprKind XprKind;
+  enum {
+    RowsAtCompileTime = DiagonalVectorType::SizeAtCompileTime,
+    ColsAtCompileTime = DiagonalVectorType::SizeAtCompileTime,
+    MaxRowsAtCompileTime = DiagonalVectorType::MaxSizeAtCompileTime,
+    MaxColsAtCompileTime = DiagonalVectorType::MaxSizeAtCompileTime,
+    Flags =  (traits<DiagonalVectorType>::Flags & LvalueBit) | NoPreferredStorageOrderBit
+  };
+};
+}
+
+template<typename _DiagonalVectorType>
+class DiagonalWrapper
+  : public DiagonalBase<DiagonalWrapper<_DiagonalVectorType> >, internal::no_assignment_operator
+{
+  public:
+    #ifndef EIGEN_PARSED_BY_DOXYGEN
+    typedef _DiagonalVectorType DiagonalVectorType;
+    typedef DiagonalWrapper Nested;
+    #endif
+
+    /** Constructor from expression of diagonal coefficients to wrap. */
+    EIGEN_DEVICE_FUNC
+    explicit inline DiagonalWrapper(DiagonalVectorType& a_diagonal) : m_diagonal(a_diagonal) {}
+
+    /** \returns a const reference to the wrapped expression of diagonal coefficients. */
+    EIGEN_DEVICE_FUNC
+    const DiagonalVectorType& diagonal() const { return m_diagonal; }
+
+  protected:
+    typename DiagonalVectorType::Nested m_diagonal;
+};
+
+/** \returns a pseudo-expression of a diagonal matrix with *this as vector of diagonal coefficients
+  *
+  * \only_for_vectors
+  *
+  * Example: \include MatrixBase_asDiagonal.cpp
+  * Output: \verbinclude MatrixBase_asDiagonal.out
+  *
+  * \sa class DiagonalWrapper, class DiagonalMatrix, diagonal(), isDiagonal()
+  **/
+template<typename Derived>
+inline const DiagonalWrapper<const Derived>
+MatrixBase<Derived>::asDiagonal() const
+{
+  return DiagonalWrapper<const Derived>(derived());
+}
+
+/** \returns true if *this is approximately equal to a diagonal matrix,
+  *          within the precision given by \a prec.
+  *
+  * Example: \include MatrixBase_isDiagonal.cpp
+  * Output: \verbinclude MatrixBase_isDiagonal.out
+  *
+  * \sa asDiagonal()
+  */
+template<typename Derived>
+bool MatrixBase<Derived>::isDiagonal(const RealScalar& prec) const
+{
+  using std::abs;
+  if(cols() != rows()) return false;
+  RealScalar maxAbsOnDiagonal = static_cast<RealScalar>(-1);
+  for(Index j = 0; j < cols(); ++j)
+  {
+    RealScalar absOnDiagonal = abs(coeff(j,j));
+    if(absOnDiagonal > maxAbsOnDiagonal) maxAbsOnDiagonal = absOnDiagonal;
+  }
+  for(Index j = 0; j < cols(); ++j)
+    for(Index i = 0; i < j; ++i)
+    {
+      if(!internal::isMuchSmallerThan(coeff(i, j), maxAbsOnDiagonal, prec)) return false;
+      if(!internal::isMuchSmallerThan(coeff(j, i), maxAbsOnDiagonal, prec)) return false;
+    }
+  return true;
+}
+
+namespace internal {
+
+template<> struct storage_kind_to_shape<DiagonalShape> { typedef DiagonalShape Shape; };
+
+struct Diagonal2Dense {};
+
+template<> struct AssignmentKind<DenseShape,DiagonalShape> { typedef Diagonal2Dense Kind; };
+
+// Diagonal matrix to Dense assignment
+template< typename DstXprType, typename SrcXprType, typename Functor>
+struct Assignment<DstXprType, SrcXprType, Functor, Diagonal2Dense>
+{
+  static void run(DstXprType &dst, const SrcXprType &src, const internal::assign_op<typename DstXprType::Scalar,typename SrcXprType::Scalar> &/*func*/)
+  {
+    dst.setZero();
+    dst.diagonal() = src.diagonal();
+  }
+  
+  static void run(DstXprType &dst, const SrcXprType &src, const internal::add_assign_op<typename DstXprType::Scalar,typename SrcXprType::Scalar> &/*func*/)
+  { dst.diagonal() += src.diagonal(); }
+  
+  static void run(DstXprType &dst, const SrcXprType &src, const internal::sub_assign_op<typename DstXprType::Scalar,typename SrcXprType::Scalar> &/*func*/)
+  { dst.diagonal() -= src.diagonal(); }
+};
+
+} // namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_DIAGONALMATRIX_H
