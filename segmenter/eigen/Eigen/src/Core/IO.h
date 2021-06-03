@@ -170,4 +170,82 @@ std::ostream & print_matrix(std::ostream & s, const Derived& _m, const IOFormat&
   {
     explicit_precision = 0;
   }
-  else if(fmt.precision == FullPrec
+  else if(fmt.precision == FullPrecision)
+  {
+    if (NumTraits<Scalar>::IsInteger)
+    {
+      explicit_precision = 0;
+    }
+    else
+    {
+      explicit_precision = significant_decimals_impl<Scalar>::run();
+    }
+  }
+  else
+  {
+    explicit_precision = fmt.precision;
+  }
+
+  std::streamsize old_precision = 0;
+  if(explicit_precision) old_precision = s.precision(explicit_precision);
+
+  bool align_cols = !(fmt.flags & DontAlignCols);
+  if(align_cols)
+  {
+    // compute the largest width
+    for(Index j = 0; j < m.cols(); ++j)
+      for(Index i = 0; i < m.rows(); ++i)
+      {
+        std::stringstream sstr;
+        sstr.copyfmt(s);
+        sstr << m.coeff(i,j);
+        width = std::max<Index>(width, Index(sstr.str().length()));
+      }
+  }
+  s << fmt.matPrefix;
+  for(Index i = 0; i < m.rows(); ++i)
+  {
+    if (i)
+      s << fmt.rowSpacer;
+    s << fmt.rowPrefix;
+    if(width) s.width(width);
+    s << m.coeff(i, 0);
+    for(Index j = 1; j < m.cols(); ++j)
+    {
+      s << fmt.coeffSeparator;
+      if (width) s.width(width);
+      s << m.coeff(i, j);
+    }
+    s << fmt.rowSuffix;
+    if( i < m.rows() - 1)
+      s << fmt.rowSeparator;
+  }
+  s << fmt.matSuffix;
+  if(explicit_precision) s.precision(old_precision);
+  return s;
+}
+
+} // end namespace internal
+
+/** \relates DenseBase
+  *
+  * Outputs the matrix, to the given stream.
+  *
+  * If you wish to print the matrix with a format different than the default, use DenseBase::format().
+  *
+  * It is also possible to change the default format by defining EIGEN_DEFAULT_IO_FORMAT before including Eigen headers.
+  * If not defined, this will automatically be defined to Eigen::IOFormat(), that is the Eigen::IOFormat with default parameters.
+  *
+  * \sa DenseBase::format()
+  */
+template<typename Derived>
+std::ostream & operator <<
+(std::ostream & s,
+ const DenseBase<Derived> & m)
+{
+  return internal::print_matrix(s, m.eval(), EIGEN_DEFAULT_IO_FORMAT);
+}
+
+} // end namespace Eigen
+
+#endif // EIGEN_IO_H
