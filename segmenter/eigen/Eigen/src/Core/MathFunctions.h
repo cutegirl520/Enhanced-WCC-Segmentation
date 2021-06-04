@@ -1109,4 +1109,253 @@ double acos(const double &x) { return ::acos(x); }
 #endif
 
 template<typename T>
-EIGEN_DEVICE_FUNC EIG
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T asin(const T &x) {
+  EIGEN_USING_STD_MATH(asin);
+  return asin(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float asin(const float &x) { return ::asinf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double asin(const double &x) { return ::asin(x); }
+#endif
+
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T atan(const T &x) {
+  EIGEN_USING_STD_MATH(atan);
+  return atan(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float atan(const float &x) { return ::atanf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double atan(const double &x) { return ::atan(x); }
+#endif
+
+
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T cosh(const T &x) {
+  EIGEN_USING_STD_MATH(cosh);
+  return cosh(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float cosh(const float &x) { return ::coshf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double cosh(const double &x) { return ::cosh(x); }
+#endif
+
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T sinh(const T &x) {
+  EIGEN_USING_STD_MATH(sinh);
+  return sinh(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float sinh(const float &x) { return ::sinhf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double sinh(const double &x) { return ::sinh(x); }
+#endif
+
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T tanh(const T &x) {
+  EIGEN_USING_STD_MATH(tanh);
+  return tanh(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float tanh(const float &x) { return ::tanhf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double tanh(const double &x) { return ::tanh(x); }
+#endif
+
+template <typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T fmod(const T& a, const T& b) {
+  EIGEN_USING_STD_MATH(fmod);
+  return fmod(a, b);
+}
+
+#ifdef __CUDACC__
+template <>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float fmod(const float& a, const float& b) {
+  return ::fmodf(a, b);
+}
+
+template <>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double fmod(const double& a, const double& b) {
+  return ::fmod(a, b);
+}
+#endif
+
+} // end namespace numext
+
+namespace internal {
+
+template<typename T>
+EIGEN_DEVICE_FUNC bool isfinite_impl(const std::complex<T>& x)
+{
+  return (numext::isfinite)(numext::real(x)) && (numext::isfinite)(numext::imag(x));
+}
+
+template<typename T>
+EIGEN_DEVICE_FUNC bool isnan_impl(const std::complex<T>& x)
+{
+  return (numext::isnan)(numext::real(x)) || (numext::isnan)(numext::imag(x));
+}
+
+template<typename T>
+EIGEN_DEVICE_FUNC bool isinf_impl(const std::complex<T>& x)
+{
+  return ((numext::isinf)(numext::real(x)) || (numext::isinf)(numext::imag(x))) && (!(numext::isnan)(x));
+}
+
+/****************************************************************************
+* Implementation of fuzzy comparisons                                       *
+****************************************************************************/
+
+template<typename Scalar,
+         bool IsComplex,
+         bool IsInteger>
+struct scalar_fuzzy_default_impl {};
+
+template<typename Scalar>
+struct scalar_fuzzy_default_impl<Scalar, false, false>
+{
+  typedef typename NumTraits<Scalar>::Real RealScalar;
+  template<typename OtherScalar> EIGEN_DEVICE_FUNC
+  static inline bool isMuchSmallerThan(const Scalar& x, const OtherScalar& y, const RealScalar& prec)
+  {
+    return numext::abs(x) <= numext::abs(y) * prec;
+  }
+  EIGEN_DEVICE_FUNC
+  static inline bool isApprox(const Scalar& x, const Scalar& y, const RealScalar& prec)
+  {
+    return numext::abs(x - y) <= numext::mini(numext::abs(x), numext::abs(y)) * prec;
+  }
+  EIGEN_DEVICE_FUNC
+  static inline bool isApproxOrLessThan(const Scalar& x, const Scalar& y, const RealScalar& prec)
+  {
+    return x <= y || isApprox(x, y, prec);
+  }
+};
+
+template<typename Scalar>
+struct scalar_fuzzy_default_impl<Scalar, false, true>
+{
+  typedef typename NumTraits<Scalar>::Real RealScalar;
+  template<typename OtherScalar> EIGEN_DEVICE_FUNC
+  static inline bool isMuchSmallerThan(const Scalar& x, const Scalar&, const RealScalar&)
+  {
+    return x == Scalar(0);
+  }
+  EIGEN_DEVICE_FUNC
+  static inline bool isApprox(const Scalar& x, const Scalar& y, const RealScalar&)
+  {
+    return x == y;
+  }
+  EIGEN_DEVICE_FUNC
+  static inline bool isApproxOrLessThan(const Scalar& x, const Scalar& y, const RealScalar&)
+  {
+    return x <= y;
+  }
+};
+
+template<typename Scalar>
+struct scalar_fuzzy_default_impl<Scalar, true, false>
+{
+  typedef typename NumTraits<Scalar>::Real RealScalar;
+  template<typename OtherScalar>
+  static inline bool isMuchSmallerThan(const Scalar& x, const OtherScalar& y, const RealScalar& prec)
+  {
+    return numext::abs2(x) <= numext::abs2(y) * prec * prec;
+  }
+  static inline bool isApprox(const Scalar& x, const Scalar& y, const RealScalar& prec)
+  {
+    return numext::abs2(x - y) <= numext::mini(numext::abs2(x), numext::abs2(y)) * prec * prec;
+  }
+};
+
+template<typename Scalar>
+struct scalar_fuzzy_impl : scalar_fuzzy_default_impl<Scalar, NumTraits<Scalar>::IsComplex, NumTraits<Scalar>::IsInteger> {};
+
+template<typename Scalar, typename OtherScalar> EIGEN_DEVICE_FUNC
+inline bool isMuchSmallerThan(const Scalar& x, const OtherScalar& y,
+                              const typename NumTraits<Scalar>::Real &precision = NumTraits<Scalar>::dummy_precision())
+{
+  return scalar_fuzzy_impl<Scalar>::template isMuchSmallerThan<OtherScalar>(x, y, precision);
+}
+
+template<typename Scalar> EIGEN_DEVICE_FUNC
+inline bool isApprox(const Scalar& x, const Scalar& y,
+                     const typename NumTraits<Scalar>::Real &precision = NumTraits<Scalar>::dummy_precision())
+{
+  return scalar_fuzzy_impl<Scalar>::isApprox(x, y, precision);
+}
+
+template<typename Scalar> EIGEN_DEVICE_FUNC
+inline bool isApproxOrLessThan(const Scalar& x, const Scalar& y,
+                               const typename NumTraits<Scalar>::Real &precision = NumTraits<Scalar>::dummy_precision())
+{
+  return scalar_fuzzy_impl<Scalar>::isApproxOrLessThan(x, y, precision);
+}
+
+/******************************************
+***  The special case of the  bool type ***
+******************************************/
+
+template<> struct random_impl<bool>
+{
+  static inline bool run()
+  {
+    return random<int>(0,1)==0 ? false : true;
+  }
+};
+
+template<> struct scalar_fuzzy_impl<bool>
+{
+  typedef bool RealScalar;
+  
+  template<typename OtherScalar> EIGEN_DEVICE_FUNC
+  static inline bool isMuchSmallerThan(const bool& x, const bool&, const bool&)
+  {
+    return !x;
+  }
+  
+  EIGEN_DEVICE_FUNC
+  static inline bool isApprox(bool x, bool y, bool)
+  {
+    return x == y;
+  }
+
+  EIGEN_DEVICE_FUNC
+  static inline bool isApproxOrLessThan(const bool& x, const bool& y, const bool&)
+  {
+    return (!x) || y;
+  }
+  
+};
+
+  
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_MATHFUNCTIONS_H
