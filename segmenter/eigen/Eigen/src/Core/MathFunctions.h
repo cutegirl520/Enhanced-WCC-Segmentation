@@ -696,4 +696,417 @@ isfinite_impl(const T&) { return true; }
 
 template<typename T>
 EIGEN_DEVICE_FUNC
-typename internal::enable_if<(!in
+typename internal::enable_if<(!internal::is_integral<T>::value)&&(!NumTraits<T>::IsComplex),bool>::type
+isfinite_impl(const T& x)
+{
+  #ifdef __CUDA_ARCH__
+    return (::isfinite)(x);
+  #elif EIGEN_USE_STD_FPCLASSIFY
+    using std::isfinite;
+    return isfinite EIGEN_NOT_A_MACRO (x);
+  #else
+    return x<=NumTraits<T>::highest() && x>=NumTraits<T>::lowest();
+  #endif
+}
+
+template<typename T>
+EIGEN_DEVICE_FUNC
+typename internal::enable_if<(!internal::is_integral<T>::value)&&(!NumTraits<T>::IsComplex),bool>::type
+isinf_impl(const T& x)
+{
+  #ifdef __CUDA_ARCH__
+    return (::isinf)(x);
+  #elif EIGEN_USE_STD_FPCLASSIFY
+    using std::isinf;
+    return isinf EIGEN_NOT_A_MACRO (x);
+  #else
+    return x>NumTraits<T>::highest() || x<NumTraits<T>::lowest();
+  #endif
+}
+
+template<typename T>
+EIGEN_DEVICE_FUNC
+typename internal::enable_if<(!internal::is_integral<T>::value)&&(!NumTraits<T>::IsComplex),bool>::type
+isnan_impl(const T& x)
+{
+  #ifdef __CUDA_ARCH__
+    return (::isnan)(x);
+  #elif EIGEN_USE_STD_FPCLASSIFY
+    using std::isnan;
+    return isnan EIGEN_NOT_A_MACRO (x);
+  #else
+    return x != x;
+  #endif
+}
+
+#if (!EIGEN_USE_STD_FPCLASSIFY)
+
+#if EIGEN_COMP_MSVC
+
+template<typename T> EIGEN_DEVICE_FUNC bool isinf_msvc_helper(T x)
+{
+  return _fpclass(x)==_FPCLASS_NINF || _fpclass(x)==_FPCLASS_PINF;
+}
+
+//MSVC defines a _isnan builtin function, but for double only
+EIGEN_DEVICE_FUNC inline bool isnan_impl(const long double& x) { return _isnan(x)!=0; }
+EIGEN_DEVICE_FUNC inline bool isnan_impl(const double& x)      { return _isnan(x)!=0; }
+EIGEN_DEVICE_FUNC inline bool isnan_impl(const float& x)       { return _isnan(x)!=0; }
+
+EIGEN_DEVICE_FUNC inline bool isinf_impl(const long double& x) { return isinf_msvc_helper(x); }
+EIGEN_DEVICE_FUNC inline bool isinf_impl(const double& x)      { return isinf_msvc_helper(x); }
+EIGEN_DEVICE_FUNC inline bool isinf_impl(const float& x)       { return isinf_msvc_helper(x); }
+
+#elif (defined __FINITE_MATH_ONLY__ && __FINITE_MATH_ONLY__ && EIGEN_COMP_GNUC)
+
+#if EIGEN_GNUC_AT_LEAST(5,0)
+  #define EIGEN_TMP_NOOPT_ATTRIB EIGEN_DEVICE_FUNC inline __attribute__((optimize("no-finite-math-only")))
+#else
+  // NOTE the inline qualifier and noinline attribute are both needed: the former is to avoid linking issue (duplicate symbol),
+  //      while the second prevent too aggressive optimizations in fast-math mode:
+  #define EIGEN_TMP_NOOPT_ATTRIB EIGEN_DEVICE_FUNC inline __attribute__((noinline,optimize("no-finite-math-only")))
+#endif
+
+template<> EIGEN_TMP_NOOPT_ATTRIB bool isnan_impl(const long double& x) { return __builtin_isnan(x); }
+template<> EIGEN_TMP_NOOPT_ATTRIB bool isnan_impl(const double& x)      { return __builtin_isnan(x); }
+template<> EIGEN_TMP_NOOPT_ATTRIB bool isnan_impl(const float& x)       { return __builtin_isnan(x); }
+template<> EIGEN_TMP_NOOPT_ATTRIB bool isinf_impl(const double& x)      { return __builtin_isinf(x); }
+template<> EIGEN_TMP_NOOPT_ATTRIB bool isinf_impl(const float& x)       { return __builtin_isinf(x); }
+template<> EIGEN_TMP_NOOPT_ATTRIB bool isinf_impl(const long double& x) { return __builtin_isinf(x); }
+
+#undef EIGEN_TMP_NOOPT_ATTRIB
+
+#endif
+
+#endif
+
+// The following overload are defined at the end of this file
+template<typename T> EIGEN_DEVICE_FUNC bool isfinite_impl(const std::complex<T>& x);
+template<typename T> EIGEN_DEVICE_FUNC bool isnan_impl(const std::complex<T>& x);
+template<typename T> EIGEN_DEVICE_FUNC bool isinf_impl(const std::complex<T>& x);
+
+} // end namespace internal
+
+/****************************************************************************
+* Generic math functions                                                    *
+****************************************************************************/
+
+namespace numext {
+
+#ifndef __CUDA_ARCH__
+template<typename T>
+EIGEN_DEVICE_FUNC
+EIGEN_ALWAYS_INLINE T mini(const T& x, const T& y)
+{
+  EIGEN_USING_STD_MATH(min);
+  return min EIGEN_NOT_A_MACRO (x,y);
+}
+
+template<typename T>
+EIGEN_DEVICE_FUNC
+EIGEN_ALWAYS_INLINE T maxi(const T& x, const T& y)
+{
+  EIGEN_USING_STD_MATH(max);
+  return max EIGEN_NOT_A_MACRO (x,y);
+}
+#else
+template<typename T>
+EIGEN_DEVICE_FUNC
+EIGEN_ALWAYS_INLINE T mini(const T& x, const T& y)
+{
+  return y < x ? y : x;
+}
+template<>
+EIGEN_DEVICE_FUNC
+EIGEN_ALWAYS_INLINE float mini(const float& x, const float& y)
+{
+  return fminf(x, y);
+}
+template<typename T>
+EIGEN_DEVICE_FUNC
+EIGEN_ALWAYS_INLINE T maxi(const T& x, const T& y)
+{
+  return x < y ? y : x;
+}
+template<>
+EIGEN_DEVICE_FUNC
+EIGEN_ALWAYS_INLINE float maxi(const float& x, const float& y)
+{
+  return fmaxf(x, y);
+}
+#endif
+
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline EIGEN_MATHFUNC_RETVAL(real, Scalar) real(const Scalar& x)
+{
+  return EIGEN_MATHFUNC_IMPL(real, Scalar)::run(x);
+}
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline typename internal::add_const_on_value_type< EIGEN_MATHFUNC_RETVAL(real_ref, Scalar) >::type real_ref(const Scalar& x)
+{
+  return internal::real_ref_impl<Scalar>::run(x);
+}
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline EIGEN_MATHFUNC_RETVAL(real_ref, Scalar) real_ref(Scalar& x)
+{
+  return EIGEN_MATHFUNC_IMPL(real_ref, Scalar)::run(x);
+}
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline EIGEN_MATHFUNC_RETVAL(imag, Scalar) imag(const Scalar& x)
+{
+  return EIGEN_MATHFUNC_IMPL(imag, Scalar)::run(x);
+}
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline EIGEN_MATHFUNC_RETVAL(arg, Scalar) arg(const Scalar& x)
+{
+  return EIGEN_MATHFUNC_IMPL(arg, Scalar)::run(x);
+}
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline typename internal::add_const_on_value_type< EIGEN_MATHFUNC_RETVAL(imag_ref, Scalar) >::type imag_ref(const Scalar& x)
+{
+  return internal::imag_ref_impl<Scalar>::run(x);
+}
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline EIGEN_MATHFUNC_RETVAL(imag_ref, Scalar) imag_ref(Scalar& x)
+{
+  return EIGEN_MATHFUNC_IMPL(imag_ref, Scalar)::run(x);
+}
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline EIGEN_MATHFUNC_RETVAL(conj, Scalar) conj(const Scalar& x)
+{
+  return EIGEN_MATHFUNC_IMPL(conj, Scalar)::run(x);
+}
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline EIGEN_MATHFUNC_RETVAL(abs2, Scalar) abs2(const Scalar& x)
+{
+  return EIGEN_MATHFUNC_IMPL(abs2, Scalar)::run(x);
+}
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline EIGEN_MATHFUNC_RETVAL(norm1, Scalar) norm1(const Scalar& x)
+{
+  return EIGEN_MATHFUNC_IMPL(norm1, Scalar)::run(x);
+}
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline EIGEN_MATHFUNC_RETVAL(hypot, Scalar) hypot(const Scalar& x, const Scalar& y)
+{
+  return EIGEN_MATHFUNC_IMPL(hypot, Scalar)::run(x, y);
+}
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline EIGEN_MATHFUNC_RETVAL(log1p, Scalar) log1p(const Scalar& x)
+{
+  return EIGEN_MATHFUNC_IMPL(log1p, Scalar)::run(x);
+}
+
+template<typename ScalarX,typename ScalarY>
+EIGEN_DEVICE_FUNC
+inline typename internal::pow_impl<ScalarX,ScalarY>::result_type pow(const ScalarX& x, const ScalarY& y)
+{
+  return internal::pow_impl<ScalarX,ScalarY>::run(x, y);
+}
+
+template<typename T> EIGEN_DEVICE_FUNC bool (isnan)   (const T &x) { return internal::isnan_impl(x); }
+template<typename T> EIGEN_DEVICE_FUNC bool (isinf)   (const T &x) { return internal::isinf_impl(x); }
+template<typename T> EIGEN_DEVICE_FUNC bool (isfinite)(const T &x) { return internal::isfinite_impl(x); }
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline EIGEN_MATHFUNC_RETVAL(round, Scalar) round(const Scalar& x)
+{
+  return EIGEN_MATHFUNC_IMPL(round, Scalar)::run(x);
+}
+
+template<typename T>
+EIGEN_DEVICE_FUNC
+T (floor)(const T& x)
+{
+  EIGEN_USING_STD_MATH(floor);
+  return floor(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float floor(const float &x) { return ::floorf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double floor(const double &x) { return ::floor(x); }
+#endif
+
+template<typename T>
+EIGEN_DEVICE_FUNC
+T (ceil)(const T& x)
+{
+  EIGEN_USING_STD_MATH(ceil);
+  return ceil(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float ceil(const float &x) { return ::ceilf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double ceil(const double &x) { return ::ceil(x); }
+#endif
+
+
+/** Log base 2 for 32 bits positive integers.
+  * Conveniently returns 0 for x==0. */
+inline int log2(int x)
+{
+  eigen_assert(x>=0);
+  unsigned int v(x);
+  static const int table[32] = { 0, 9, 1, 10, 13, 21, 2, 29, 11, 14, 16, 18, 22, 25, 3, 30, 8, 12, 20, 28, 15, 17, 24, 7, 19, 27, 23, 6, 26, 5, 4, 31 };
+  v |= v >> 1;
+  v |= v >> 2;
+  v |= v >> 4;
+  v |= v >> 8;
+  v |= v >> 16;
+  return table[(v * 0x07C4ACDDU) >> 27];
+}
+
+/** \returns the square root of \a x.
+  *
+  * It is essentially equivalent to \code using std::sqrt; return sqrt(x); \endcode,
+  * but slightly faster for float/double and some compilers (e.g., gcc), thanks to
+  * specializations when SSE is enabled.
+  *
+  * It's usage is justified in performance critical functions, like norm/normalize.
+  */
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T sqrt(const T &x)
+{
+  EIGEN_USING_STD_MATH(sqrt);
+  return sqrt(x);
+}
+
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T log(const T &x) {
+  EIGEN_USING_STD_MATH(log);
+  return log(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float log(const float &x) { return ::logf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double log(const double &x) { return ::log(x); }
+#endif
+
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+typename NumTraits<T>::Real abs(const T &x) {
+  EIGEN_USING_STD_MATH(abs);
+  return abs(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float abs(const float &x) { return ::fabsf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double abs(const double &x) { return ::fabs(x); }
+#endif
+
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T exp(const T &x) {
+  EIGEN_USING_STD_MATH(exp);
+  return exp(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float exp(const float &x) { return ::expf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double exp(const double &x) { return ::exp(x); }
+#endif
+
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T cos(const T &x) {
+  EIGEN_USING_STD_MATH(cos);
+  return cos(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float cos(const float &x) { return ::cosf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double cos(const double &x) { return ::cos(x); }
+#endif
+
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T sin(const T &x) {
+  EIGEN_USING_STD_MATH(sin);
+  return sin(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float sin(const float &x) { return ::sinf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double sin(const double &x) { return ::sin(x); }
+#endif
+
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T tan(const T &x) {
+  EIGEN_USING_STD_MATH(tan);
+  return tan(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float tan(const float &x) { return ::tanf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double tan(const double &x) { return ::tan(x); }
+#endif
+
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+T acos(const T &x) {
+  EIGEN_USING_STD_MATH(acos);
+  return acos(x);
+}
+
+#ifdef __CUDACC__
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float acos(const float &x) { return ::acosf(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double acos(const double &x) { return ::acos(x); }
+#endif
+
+template<typename T>
+EIGEN_DEVICE_FUNC EIG
