@@ -385,4 +385,77 @@ class Matrix
     /////////// Geometry module ///////////
 
     template<typename OtherDerived>
-    EIGE
+    EIGEN_DEVICE_FUNC
+    explicit Matrix(const RotationBase<OtherDerived,ColsAtCompileTime>& r);
+    template<typename OtherDerived>
+    EIGEN_DEVICE_FUNC
+    Matrix& operator=(const RotationBase<OtherDerived,ColsAtCompileTime>& r);
+
+    // allow to extend Matrix outside Eigen
+    #ifdef EIGEN_MATRIX_PLUGIN
+    #include EIGEN_MATRIX_PLUGIN
+    #endif
+
+  protected:
+    template <typename Derived, typename OtherDerived, bool IsVector>
+    friend struct internal::conservative_resize_like_impl;
+
+    using Base::m_storage;
+};
+
+/** \defgroup matrixtypedefs Global matrix typedefs
+  *
+  * \ingroup Core_Module
+  *
+  * Eigen defines several typedef shortcuts for most common matrix and vector types.
+  *
+  * The general patterns are the following:
+  *
+  * \c MatrixSizeType where \c Size can be \c 2,\c 3,\c 4 for fixed size square matrices or \c X for dynamic size,
+  * and where \c Type can be \c i for integer, \c f for float, \c d for double, \c cf for complex float, \c cd
+  * for complex double.
+  *
+  * For example, \c Matrix3d is a fixed-size 3x3 matrix type of doubles, and \c MatrixXf is a dynamic-size matrix of floats.
+  *
+  * There are also \c VectorSizeType and \c RowVectorSizeType which are self-explanatory. For example, \c Vector4cf is
+  * a fixed-size vector of 4 complex floats.
+  *
+  * \sa class Matrix
+  */
+
+#define EIGEN_MAKE_TYPEDEFS(Type, TypeSuffix, Size, SizeSuffix)   \
+/** \ingroup matrixtypedefs */                                    \
+typedef Matrix<Type, Size, Size> Matrix##SizeSuffix##TypeSuffix;  \
+/** \ingroup matrixtypedefs */                                    \
+typedef Matrix<Type, Size, 1>    Vector##SizeSuffix##TypeSuffix;  \
+/** \ingroup matrixtypedefs */                                    \
+typedef Matrix<Type, 1, Size>    RowVector##SizeSuffix##TypeSuffix;
+
+#define EIGEN_MAKE_FIXED_TYPEDEFS(Type, TypeSuffix, Size)         \
+/** \ingroup matrixtypedefs */                                    \
+typedef Matrix<Type, Size, Dynamic> Matrix##Size##X##TypeSuffix;  \
+/** \ingroup matrixtypedefs */                                    \
+typedef Matrix<Type, Dynamic, Size> Matrix##X##Size##TypeSuffix;
+
+#define EIGEN_MAKE_TYPEDEFS_ALL_SIZES(Type, TypeSuffix) \
+EIGEN_MAKE_TYPEDEFS(Type, TypeSuffix, 2, 2) \
+EIGEN_MAKE_TYPEDEFS(Type, TypeSuffix, 3, 3) \
+EIGEN_MAKE_TYPEDEFS(Type, TypeSuffix, 4, 4) \
+EIGEN_MAKE_TYPEDEFS(Type, TypeSuffix, Dynamic, X) \
+EIGEN_MAKE_FIXED_TYPEDEFS(Type, TypeSuffix, 2) \
+EIGEN_MAKE_FIXED_TYPEDEFS(Type, TypeSuffix, 3) \
+EIGEN_MAKE_FIXED_TYPEDEFS(Type, TypeSuffix, 4)
+
+EIGEN_MAKE_TYPEDEFS_ALL_SIZES(int,                  i)
+EIGEN_MAKE_TYPEDEFS_ALL_SIZES(float,                f)
+EIGEN_MAKE_TYPEDEFS_ALL_SIZES(double,               d)
+EIGEN_MAKE_TYPEDEFS_ALL_SIZES(std::complex<float>,  cf)
+EIGEN_MAKE_TYPEDEFS_ALL_SIZES(std::complex<double>, cd)
+
+#undef EIGEN_MAKE_TYPEDEFS_ALL_SIZES
+#undef EIGEN_MAKE_TYPEDEFS
+#undef EIGEN_MAKE_FIXED_TYPEDEFS
+
+} // end namespace Eigen
+
+#endif // EIGEN_MATRIX_H
