@@ -213,4 +213,253 @@ template<typename Derived> class MatrixBase
     EIGEN_DEVICE_FUNC
     DiagonalReturnType diagonal();
 
-    typed
+    typedef typename internal::add_const<Diagonal<const Derived> >::type ConstDiagonalReturnType;
+    EIGEN_DEVICE_FUNC
+    ConstDiagonalReturnType diagonal() const;
+
+    template<int Index> struct DiagonalIndexReturnType { typedef Diagonal<Derived,Index> Type; };
+    template<int Index> struct ConstDiagonalIndexReturnType { typedef const Diagonal<const Derived,Index> Type; };
+
+    template<int Index>
+    EIGEN_DEVICE_FUNC
+    typename DiagonalIndexReturnType<Index>::Type diagonal();
+
+    template<int Index>
+    EIGEN_DEVICE_FUNC
+    typename ConstDiagonalIndexReturnType<Index>::Type diagonal() const;
+
+    typedef Diagonal<Derived,DynamicIndex> DiagonalDynamicIndexReturnType;
+    typedef typename internal::add_const<Diagonal<const Derived,DynamicIndex> >::type ConstDiagonalDynamicIndexReturnType;
+
+    EIGEN_DEVICE_FUNC
+    DiagonalDynamicIndexReturnType diagonal(Index index);
+    EIGEN_DEVICE_FUNC
+    ConstDiagonalDynamicIndexReturnType diagonal(Index index) const;
+
+    template<unsigned int Mode> struct TriangularViewReturnType { typedef TriangularView<Derived, Mode> Type; };
+    template<unsigned int Mode> struct ConstTriangularViewReturnType { typedef const TriangularView<const Derived, Mode> Type; };
+
+    template<unsigned int Mode>
+    EIGEN_DEVICE_FUNC
+    typename TriangularViewReturnType<Mode>::Type triangularView();
+    template<unsigned int Mode>
+    EIGEN_DEVICE_FUNC
+    typename ConstTriangularViewReturnType<Mode>::Type triangularView() const;
+
+    template<unsigned int UpLo> struct SelfAdjointViewReturnType { typedef SelfAdjointView<Derived, UpLo> Type; };
+    template<unsigned int UpLo> struct ConstSelfAdjointViewReturnType { typedef const SelfAdjointView<const Derived, UpLo> Type; };
+
+    template<unsigned int UpLo>
+    EIGEN_DEVICE_FUNC
+    typename SelfAdjointViewReturnType<UpLo>::Type selfadjointView();
+    template<unsigned int UpLo>
+    EIGEN_DEVICE_FUNC
+    typename ConstSelfAdjointViewReturnType<UpLo>::Type selfadjointView() const;
+
+    const SparseView<Derived> sparseView(const Scalar& m_reference = Scalar(0),
+                                         const typename NumTraits<Scalar>::Real& m_epsilon = NumTraits<Scalar>::dummy_precision()) const;
+    EIGEN_DEVICE_FUNC static const IdentityReturnType Identity();
+    EIGEN_DEVICE_FUNC static const IdentityReturnType Identity(Index rows, Index cols);
+    EIGEN_DEVICE_FUNC static const BasisReturnType Unit(Index size, Index i);
+    EIGEN_DEVICE_FUNC static const BasisReturnType Unit(Index i);
+    EIGEN_DEVICE_FUNC static const BasisReturnType UnitX();
+    EIGEN_DEVICE_FUNC static const BasisReturnType UnitY();
+    EIGEN_DEVICE_FUNC static const BasisReturnType UnitZ();
+    EIGEN_DEVICE_FUNC static const BasisReturnType UnitW();
+
+    EIGEN_DEVICE_FUNC
+    const DiagonalWrapper<const Derived> asDiagonal() const;
+    const PermutationWrapper<const Derived> asPermutation() const;
+
+    EIGEN_DEVICE_FUNC
+    Derived& setIdentity();
+    EIGEN_DEVICE_FUNC
+    Derived& setIdentity(Index rows, Index cols);
+
+    bool isIdentity(const RealScalar& prec = NumTraits<Scalar>::dummy_precision()) const;
+    bool isDiagonal(const RealScalar& prec = NumTraits<Scalar>::dummy_precision()) const;
+
+    bool isUpperTriangular(const RealScalar& prec = NumTraits<Scalar>::dummy_precision()) const;
+    bool isLowerTriangular(const RealScalar& prec = NumTraits<Scalar>::dummy_precision()) const;
+
+    template<typename OtherDerived>
+    bool isOrthogonal(const MatrixBase<OtherDerived>& other,
+                      const RealScalar& prec = NumTraits<Scalar>::dummy_precision()) const;
+    bool isUnitary(const RealScalar& prec = NumTraits<Scalar>::dummy_precision()) const;
+
+    /** \returns true if each coefficients of \c *this and \a other are all exactly equal.
+      * \warning When using floating point scalar values you probably should rather use a
+      *          fuzzy comparison such as isApprox()
+      * \sa isApprox(), operator!= */
+    template<typename OtherDerived>
+    inline bool operator==(const MatrixBase<OtherDerived>& other) const
+    { return cwiseEqual(other).all(); }
+
+    /** \returns true if at least one pair of coefficients of \c *this and \a other are not exactly equal to each other.
+      * \warning When using floating point scalar values you probably should rather use a
+      *          fuzzy comparison such as isApprox()
+      * \sa isApprox(), operator== */
+    template<typename OtherDerived>
+    inline bool operator!=(const MatrixBase<OtherDerived>& other) const
+    { return cwiseNotEqual(other).any(); }
+
+    NoAlias<Derived,Eigen::MatrixBase > noalias();
+
+    // TODO forceAlignedAccess is temporarily disabled
+    // Need to find a nicer workaround.
+    inline const Derived& forceAlignedAccess() const { return derived(); }
+    inline Derived& forceAlignedAccess() { return derived(); }
+    template<bool Enable> inline const Derived& forceAlignedAccessIf() const { return derived(); }
+    template<bool Enable> inline Derived& forceAlignedAccessIf() { return derived(); }
+
+    EIGEN_DEVICE_FUNC Scalar trace() const;
+
+    template<int p> EIGEN_DEVICE_FUNC RealScalar lpNorm() const;
+
+    EIGEN_DEVICE_FUNC MatrixBase<Derived>& matrix() { return *this; }
+    EIGEN_DEVICE_FUNC const MatrixBase<Derived>& matrix() const { return *this; }
+
+    /** \returns an \link Eigen::ArrayBase Array \endlink expression of this matrix
+      * \sa ArrayBase::matrix() */
+    EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE ArrayWrapper<Derived> array() { return ArrayWrapper<Derived>(derived()); }
+    /** \returns a const \link Eigen::ArrayBase Array \endlink expression of this matrix
+      * \sa ArrayBase::matrix() */
+    EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const ArrayWrapper<const Derived> array() const { return ArrayWrapper<const Derived>(derived()); }
+
+/////////// LU module ///////////
+
+    EIGEN_DEVICE_FUNC
+    inline const FullPivLU<PlainObject> fullPivLu() const;
+    EIGEN_DEVICE_FUNC
+    inline const PartialPivLU<PlainObject> partialPivLu() const;
+
+    EIGEN_DEVICE_FUNC
+    inline const PartialPivLU<PlainObject> lu() const;
+
+    EIGEN_DEVICE_FUNC
+    inline const Inverse<Derived> inverse() const;
+
+    template<typename ResultType>
+    inline void computeInverseAndDetWithCheck(
+      ResultType& inverse,
+      typename ResultType::Scalar& determinant,
+      bool& invertible,
+      const RealScalar& absDeterminantThreshold = NumTraits<Scalar>::dummy_precision()
+    ) const;
+    template<typename ResultType>
+    inline void computeInverseWithCheck(
+      ResultType& inverse,
+      bool& invertible,
+      const RealScalar& absDeterminantThreshold = NumTraits<Scalar>::dummy_precision()
+    ) const;
+    Scalar determinant() const;
+
+/////////// Cholesky module ///////////
+
+    inline const LLT<PlainObject>  llt() const;
+    inline const LDLT<PlainObject> ldlt() const;
+
+/////////// QR module ///////////
+
+    inline const HouseholderQR<PlainObject> householderQr() const;
+    inline const ColPivHouseholderQR<PlainObject> colPivHouseholderQr() const;
+    inline const FullPivHouseholderQR<PlainObject> fullPivHouseholderQr() const;
+    inline const CompleteOrthogonalDecomposition<PlainObject> completeOrthogonalDecomposition() const;
+
+/////////// Eigenvalues module ///////////
+
+    inline EigenvaluesReturnType eigenvalues() const;
+    inline RealScalar operatorNorm() const;
+
+/////////// SVD module ///////////
+
+    inline JacobiSVD<PlainObject> jacobiSvd(unsigned int computationOptions = 0) const;
+    inline BDCSVD<PlainObject>    bdcSvd(unsigned int computationOptions = 0) const;
+
+/////////// Geometry module ///////////
+
+    #ifndef EIGEN_PARSED_BY_DOXYGEN
+    /// \internal helper struct to form the return type of the cross product
+    template<typename OtherDerived> struct cross_product_return_type {
+      typedef typename ScalarBinaryOpTraits<typename internal::traits<Derived>::Scalar,typename internal::traits<OtherDerived>::Scalar>::ReturnType Scalar;
+      typedef Matrix<Scalar,MatrixBase::RowsAtCompileTime,MatrixBase::ColsAtCompileTime> type;
+    };
+    #endif // EIGEN_PARSED_BY_DOXYGEN
+    template<typename OtherDerived>
+    EIGEN_DEVICE_FUNC
+#ifndef EIGEN_PARSED_BY_DOXYGEN
+    inline typename cross_product_return_type<OtherDerived>::type
+#else
+    inline PlainObject
+#endif
+    cross(const MatrixBase<OtherDerived>& other) const;
+
+    template<typename OtherDerived>
+    EIGEN_DEVICE_FUNC
+    inline PlainObject cross3(const MatrixBase<OtherDerived>& other) const;
+
+    EIGEN_DEVICE_FUNC
+    inline PlainObject unitOrthogonal(void) const;
+
+    inline Matrix<Scalar,3,1> eulerAngles(Index a0, Index a1, Index a2) const;
+
+    // put this as separate enum value to work around possible GCC 4.3 bug (?)
+    enum { HomogeneousReturnTypeDirection = ColsAtCompileTime==1&&RowsAtCompileTime==1 ? ((internal::traits<Derived>::Flags&RowMajorBit)==RowMajorBit ? Horizontal : Vertical)
+                                          : ColsAtCompileTime==1 ? Vertical : Horizontal };
+    typedef Homogeneous<Derived, HomogeneousReturnTypeDirection> HomogeneousReturnType;
+    inline HomogeneousReturnType homogeneous() const;
+
+    enum {
+      SizeMinusOne = SizeAtCompileTime==Dynamic ? Dynamic : SizeAtCompileTime-1
+    };
+    typedef Block<const Derived,
+                  internal::traits<Derived>::ColsAtCompileTime==1 ? SizeMinusOne : 1,
+                  internal::traits<Derived>::ColsAtCompileTime==1 ? 1 : SizeMinusOne> ConstStartMinusOne;
+    typedef EIGEN_EXPR_BINARYOP_SCALAR_RETURN_TYPE(ConstStartMinusOne,Scalar,quotient) HNormalizedReturnType;
+
+    inline const HNormalizedReturnType hnormalized() const;
+
+////////// Householder module ///////////
+
+    void makeHouseholderInPlace(Scalar& tau, RealScalar& beta);
+    template<typename EssentialPart>
+    void makeHouseholder(EssentialPart& essential,
+                         Scalar& tau, RealScalar& beta) const;
+    template<typename EssentialPart>
+    void applyHouseholderOnTheLeft(const EssentialPart& essential,
+                                   const Scalar& tau,
+                                   Scalar* workspace);
+    template<typename EssentialPart>
+    void applyHouseholderOnTheRight(const EssentialPart& essential,
+                                    const Scalar& tau,
+                                    Scalar* workspace);
+
+///////// Jacobi module /////////
+
+    template<typename OtherScalar>
+    void applyOnTheLeft(Index p, Index q, const JacobiRotation<OtherScalar>& j);
+    template<typename OtherScalar>
+    void applyOnTheRight(Index p, Index q, const JacobiRotation<OtherScalar>& j);
+
+///////// SparseCore module /////////
+
+    template<typename OtherDerived>
+    EIGEN_STRONG_INLINE const typename SparseMatrixBase<OtherDerived>::template CwiseProductDenseReturnType<Derived>::Type
+    cwiseProduct(const SparseMatrixBase<OtherDerived> &other) const
+    {
+      return other.cwiseProduct(derived());
+    }
+
+///////// MatrixFunctions module /////////
+
+    typedef typename internal::stem_function<Scalar>::type StemFunction;
+    const MatrixExponentialReturnValue<Derived> exp() const;
+    const MatrixFunctionReturnValue<Derived> matrixFunction(StemFunction f) const;
+    const MatrixFunctionReturnValue<Derived> cosh() const;
+    const MatrixFunctionReturnValue<Derived> sinh() const;
+    const MatrixFunctionReturnValue<Derived> cos() const;
+    const MatrixFunctionReturnValue<Derived> sin() const;
+    const MatrixSquareRootReturnValue<Derived> sqrt() const;
+    const MatrixLogarithmReturnValue<Derived> log() const;
+    const MatrixPowerReturnValue<Derived> pow(const RealScalar& p) const;
+    const Ma
