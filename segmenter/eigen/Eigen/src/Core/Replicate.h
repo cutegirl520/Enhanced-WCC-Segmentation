@@ -84,4 +84,59 @@ template<typename MatrixType,int RowFactor,int ColFactor> class Replicate
     inline Replicate(const OriginalMatrixType& matrix, Index rowFactor, Index colFactor)
       : m_matrix(matrix), m_rowFactor(rowFactor), m_colFactor(colFactor)
     {
-      EIGEN_STATIC_ASSERT((internal::is_same<typename internal::remove_const<MatrixType>::type,OriginalMatrix
+      EIGEN_STATIC_ASSERT((internal::is_same<typename internal::remove_const<MatrixType>::type,OriginalMatrixType>::value),
+                          THE_MATRIX_OR_EXPRESSION_THAT_YOU_PASSED_DOES_NOT_HAVE_THE_EXPECTED_TYPE)
+    }
+
+    EIGEN_DEVICE_FUNC
+    inline Index rows() const { return m_matrix.rows() * m_rowFactor.value(); }
+    EIGEN_DEVICE_FUNC
+    inline Index cols() const { return m_matrix.cols() * m_colFactor.value(); }
+
+    EIGEN_DEVICE_FUNC
+    const _MatrixTypeNested& nestedExpression() const
+    { 
+      return m_matrix; 
+    }
+
+  protected:
+    MatrixTypeNested m_matrix;
+    const internal::variable_if_dynamic<Index, RowFactor> m_rowFactor;
+    const internal::variable_if_dynamic<Index, ColFactor> m_colFactor;
+};
+
+/**
+  * \return an expression of the replication of \c *this
+  *
+  * Example: \include MatrixBase_replicate.cpp
+  * Output: \verbinclude MatrixBase_replicate.out
+  *
+  * \sa VectorwiseOp::replicate(), DenseBase::replicate(Index,Index), class Replicate
+  */
+template<typename Derived>
+template<int RowFactor, int ColFactor>
+const Replicate<Derived,RowFactor,ColFactor>
+DenseBase<Derived>::replicate() const
+{
+  return Replicate<Derived,RowFactor,ColFactor>(derived());
+}
+
+/**
+  * \return an expression of the replication of each column (or row) of \c *this
+  *
+  * Example: \include DirectionWise_replicate_int.cpp
+  * Output: \verbinclude DirectionWise_replicate_int.out
+  *
+  * \sa VectorwiseOp::replicate(), DenseBase::replicate(), class Replicate
+  */
+template<typename ExpressionType, int Direction>
+const typename VectorwiseOp<ExpressionType,Direction>::ReplicateReturnType
+VectorwiseOp<ExpressionType,Direction>::replicate(Index factor) const
+{
+  return typename VectorwiseOp<ExpressionType,Direction>::ReplicateReturnType
+          (_expression(),Direction==Vertical?factor:1,Direction==Horizontal?factor:1);
+}
+
+} // end namespace Eigen
+
+#endif // EIGEN_REPLICATE_H
