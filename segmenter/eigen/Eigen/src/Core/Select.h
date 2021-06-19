@@ -60,4 +60,103 @@ class Select : public internal::dense_xpr_base< Select<ConditionMatrixType, Then
     inline EIGEN_DEVICE_FUNC
     Select(const ConditionMatrixType& a_conditionMatrix,
            const ThenMatrixType& a_thenMatrix,
-           con
+           const ElseMatrixType& a_elseMatrix)
+      : m_condition(a_conditionMatrix), m_then(a_thenMatrix), m_else(a_elseMatrix)
+    {
+      eigen_assert(m_condition.rows() == m_then.rows() && m_condition.rows() == m_else.rows());
+      eigen_assert(m_condition.cols() == m_then.cols() && m_condition.cols() == m_else.cols());
+    }
+
+    inline EIGEN_DEVICE_FUNC Index rows() const { return m_condition.rows(); }
+    inline EIGEN_DEVICE_FUNC Index cols() const { return m_condition.cols(); }
+
+    inline EIGEN_DEVICE_FUNC
+    const Scalar coeff(Index i, Index j) const
+    {
+      if (m_condition.coeff(i,j))
+        return m_then.coeff(i,j);
+      else
+        return m_else.coeff(i,j);
+    }
+
+    inline EIGEN_DEVICE_FUNC
+    const Scalar coeff(Index i) const
+    {
+      if (m_condition.coeff(i))
+        return m_then.coeff(i);
+      else
+        return m_else.coeff(i);
+    }
+
+    inline EIGEN_DEVICE_FUNC const ConditionMatrixType& conditionMatrix() const
+    {
+      return m_condition;
+    }
+
+    inline EIGEN_DEVICE_FUNC const ThenMatrixType& thenMatrix() const
+    {
+      return m_then;
+    }
+
+    inline EIGEN_DEVICE_FUNC const ElseMatrixType& elseMatrix() const
+    {
+      return m_else;
+    }
+
+  protected:
+    typename ConditionMatrixType::Nested m_condition;
+    typename ThenMatrixType::Nested m_then;
+    typename ElseMatrixType::Nested m_else;
+};
+
+
+/** \returns a matrix where each coefficient (i,j) is equal to \a thenMatrix(i,j)
+  * if \c *this(i,j), and \a elseMatrix(i,j) otherwise.
+  *
+  * Example: \include MatrixBase_select.cpp
+  * Output: \verbinclude MatrixBase_select.out
+  *
+  * \sa class Select
+  */
+template<typename Derived>
+template<typename ThenDerived,typename ElseDerived>
+inline const Select<Derived,ThenDerived,ElseDerived>
+DenseBase<Derived>::select(const DenseBase<ThenDerived>& thenMatrix,
+                            const DenseBase<ElseDerived>& elseMatrix) const
+{
+  return Select<Derived,ThenDerived,ElseDerived>(derived(), thenMatrix.derived(), elseMatrix.derived());
+}
+
+/** Version of DenseBase::select(const DenseBase&, const DenseBase&) with
+  * the \em else expression being a scalar value.
+  *
+  * \sa DenseBase::select(const DenseBase<ThenDerived>&, const DenseBase<ElseDerived>&) const, class Select
+  */
+template<typename Derived>
+template<typename ThenDerived>
+inline const Select<Derived,ThenDerived, typename ThenDerived::ConstantReturnType>
+DenseBase<Derived>::select(const DenseBase<ThenDerived>& thenMatrix,
+                           const typename ThenDerived::Scalar& elseScalar) const
+{
+  return Select<Derived,ThenDerived,typename ThenDerived::ConstantReturnType>(
+    derived(), thenMatrix.derived(), ThenDerived::Constant(rows(),cols(),elseScalar));
+}
+
+/** Version of DenseBase::select(const DenseBase&, const DenseBase&) with
+  * the \em then expression being a scalar value.
+  *
+  * \sa DenseBase::select(const DenseBase<ThenDerived>&, const DenseBase<ElseDerived>&) const, class Select
+  */
+template<typename Derived>
+template<typename ElseDerived>
+inline const Select<Derived, typename ElseDerived::ConstantReturnType, ElseDerived >
+DenseBase<Derived>::select(const typename ElseDerived::Scalar& thenScalar,
+                           const DenseBase<ElseDerived>& elseMatrix) const
+{
+  return Select<Derived,typename ElseDerived::ConstantReturnType,ElseDerived>(
+    derived(), ElseDerived::Constant(rows(),cols(),thenScalar), elseMatrix.derived());
+}
+
+} // end namespace Eigen
+
+#endif // EIGEN_SELECT_H
