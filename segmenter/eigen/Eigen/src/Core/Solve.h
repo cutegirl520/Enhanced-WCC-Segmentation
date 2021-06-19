@@ -160,4 +160,15 @@ template<typename DstXprType, typename DecType, typename RhsType, typename Scala
 struct Assignment<DstXprType, Solve<CwiseUnaryOp<internal::scalar_conjugate_op<typename DecType::Scalar>, const Transpose<const DecType> >,RhsType>,
                   internal::assign_op<Scalar,Scalar>, Dense2Dense>
 {
-  typedef Solve<CwiseUnaryOp<internal::scalar_conjugate_op<typename De
+  typedef Solve<CwiseUnaryOp<internal::scalar_conjugate_op<typename DecType::Scalar>, const Transpose<const DecType> >,RhsType> SrcXprType;
+  static void run(DstXprType &dst, const SrcXprType &src, const internal::assign_op<Scalar,Scalar> &)
+  {
+    src.dec().nestedExpression().nestedExpression().template _solve_impl_transposed<true>(src.rhs(), dst);
+  }
+};
+
+} // end namepsace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_SOLVE_H
