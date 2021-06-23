@@ -850,4 +850,123 @@ struct triangular_assignment_loop
   typedef typename DstEvaluatorType::XprType DstXprType;
   
   enum {
-    col = (UnrollCount-1) / Ds
+    col = (UnrollCount-1) / DstXprType::RowsAtCompileTime,
+    row = (UnrollCount-1) % DstXprType::RowsAtCompileTime
+  };
+  
+  typedef typename Kernel::Scalar Scalar;
+
+  EIGEN_DEVICE_FUNC
+  static inline void run(Kernel &kernel)
+  {
+    triangular_assignment_loop<Kernel, Mode, UnrollCount-1, SetOpposite>::run(kernel);
+    
+    if(row==col)
+      kernel.assignDiagonalCoeff(row);
+    else if( ((Mode&Lower) && row>col) || ((Mode&Upper) && row<col) )
+      kernel.assignCoeff(row,col);
+    else if(SetOpposite)
+      kernel.assignOppositeCoeff(row,col);
+  }
+};
+
+// prevent buggy user code from causing an infinite recursion
+template<typename Kernel, unsigned int Mode, bool SetOpposite>
+struct triangular_assignment_loop<Kernel, Mode, 0, SetOpposite>
+{
+  EIGEN_DEVICE_FUNC
+  static inline void run(Kernel &) {}
+};
+
+
+
+// TODO: experiment with a recursive assignment procedure splitting the current
+//       triangular part into one rectangular and two triangular parts.
+
+
+template<typename Kernel, unsigned int Mode, bool SetOpposite>
+struct triangular_assignment_loop<Kernel, Mode, Dynamic, SetOpposite>
+{
+  typedef typename Kernel::Scalar Scalar;
+  EIGEN_DEVICE_FUNC
+  static inline void run(Kernel &kernel)
+  {
+    for(Index j = 0; j < kernel.cols(); ++j)
+    {
+      Index maxi = (std::min)(j, kernel.rows());
+      Index i = 0;
+      if (((Mode&Lower) && SetOpposite) || (Mode&Upper))
+      {
+        for(; i < maxi; ++i)
+          if(Mode&Upper) kernel.assignCoeff(i, j);
+          else           kernel.assignOppositeCoeff(i, j);
+      }
+      else
+        i = maxi;
+      
+      if(i<kernel.rows()) // then i==j
+        kernel.assignDiagonalCoeff(i++);
+      
+      if (((Mode&Upper) && SetOpposite) || (Mode&Lower))
+      {
+        for(; i < kernel.rows(); ++i)
+          if(Mode&Lower) kernel.assignCoeff(i, j);
+          else           kernel.assignOppositeCoeff(i, j);
+      }
+    }
+  }
+};
+
+} // end namespace internal
+
+/** Assigns a triangular or selfadjoint matrix to a dense matrix.
+  * If the matrix is triangular, the opposite part is set to zero. */
+template<typename Derived>
+template<typename DenseDerived>
+void TriangularBase<Derived>::evalToLazy(MatrixBase<DenseDerived> &other) const
+{
+  other.derived().resize(this->rows(), this->cols());
+  internal::call_triangular_assignment_loop<Derived::Mode,(Derived::Mode&SelfAdjoint)==0 /* SetOpposite */>(other.derived(), derived().nestedExpression());
+}
+
+namespace internal {
+  
+// Triangular = Product
+template< typename DstXprType, typename Lhs, typename Rhs, typename Scalar>
+struct Assignment<DstXprType, Product<Lhs,Rhs,DefaultProduct>, internal::assign_op<Scalar,typename Product<Lhs,Rhs,DefaultProduct>::Scalar>, Dense2Triangular>
+{
+  typedef Product<Lhs,Rhs,DefaultProduct> SrcXprType;
+  static void run(DstXprType &dst, const SrcXprType &src, const internal::assign_op<Scalar,typename SrcXprType::Scalar> &)
+  {
+    dst.setZero();
+    dst._assignProduct(src, 1);
+  }
+};
+
+// Triangular += Product
+template< typename DstXprType, typename Lhs, typename Rhs, typename Scalar>
+struct Assignment<DstXprType, Product<Lhs,Rhs,DefaultProduct>, internal::add_assign_op<Scalar,typename Product<Lhs,Rhs,DefaultProduct>::Scalar>, Dense2Triangular>
+{
+  typedef Product<Lhs,Rhs,DefaultProduct> SrcXprType;
+  static void run(DstXprType &dst, const SrcXprType &src, const internal::add_assign_op<Scalar,typename SrcXprType::Scalar> &)
+  {
+    dst._assignProduct(src, 1);
+  }
+};
+
+// Triangular -= Product
+template< typename DstXprType, typename Lhs, typename Rhs, typename Scalar>
+struct Assignment<DstXprType, Product<Lhs,Rhs,DefaultProduct>, internal::sub_assign_op<Scalar,typename Product<Lhs,Rhs,DefaultProduct>::Scalar>, Dense2Triangular>
+{
+  typedef Product<Lhs,Rhs,DefaultProduct> SrcXprType;
+  static void run(DstXprType &dst, const SrcXprType &src, const internal::sub_assign_op<Scalar,typename SrcXprType::Scalar> &)
+  {
+    dst._assignProduct(src, -1);
+  }
+};
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_TRIANGULARMATRIX_H
