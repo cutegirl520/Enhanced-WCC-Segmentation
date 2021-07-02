@@ -535,4 +535,62 @@ ptanh<Packet4f>(const Packet4f& _x) {
   _EIGEN_DECLARE_CONST_Packet4f(alpha_5, 1.48572235717979e-05f);
   _EIGEN_DECLARE_CONST_Packet4f(alpha_7, 5.12229709037114e-08f);
   _EIGEN_DECLARE_CONST_Packet4f(alpha_9, -8.60467152213735e-11f);
-  _EIGEN_DECLARE_CONST_
+  _EIGEN_DECLARE_CONST_Packet4f(alpha_11, 2.00018790482477e-13f);
+  _EIGEN_DECLARE_CONST_Packet4f(alpha_13, -2.76076847742355e-16f);
+
+  // The monomial coefficients of the denominator polynomial (even).
+  _EIGEN_DECLARE_CONST_Packet4f(beta_0, 4.89352518554385e-03f);
+  _EIGEN_DECLARE_CONST_Packet4f(beta_2, 2.26843463243900e-03f);
+  _EIGEN_DECLARE_CONST_Packet4f(beta_4, 1.18534705686654e-04f);
+  _EIGEN_DECLARE_CONST_Packet4f(beta_6, 1.19825839466702e-06f);
+
+  // Since the polynomials are odd/even, we need x^2.
+  const Packet4f x2 = pmul(x, x);
+
+  // Evaluate the numerator polynomial p.
+  Packet4f p = pmadd(x2, p4f_alpha_13, p4f_alpha_11);
+  p = pmadd(x2, p, p4f_alpha_9);
+  p = pmadd(x2, p, p4f_alpha_7);
+  p = pmadd(x2, p, p4f_alpha_5);
+  p = pmadd(x2, p, p4f_alpha_3);
+  p = pmadd(x2, p, p4f_alpha_1);
+  p = pmul(x, p);
+
+  // Evaluate the denominator polynomial p.
+  Packet4f q = pmadd(x2, p4f_beta_6, p4f_beta_4);
+  q = pmadd(x2, q, p4f_beta_2);
+  q = pmadd(x2, q, p4f_beta_0);
+
+  // Divide the numerator by the denominator.
+  return pdiv(p, q);
+}
+
+} // end namespace internal
+
+namespace numext {
+
+template<>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+float sqrt(const float &x)
+{
+  return internal::pfirst(internal::Packet4f(_mm_sqrt_ss(_mm_set_ss(x))));
+}
+
+template<>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+double sqrt(const double &x)
+{
+#if EIGEN_COMP_GNUC_STRICT
+  // This works around a GCC bug generating poor code for _mm_sqrt_pd
+  // See https://bitbucket.org/eigen/eigen/commits/14f468dba4d350d7c19c9b93072e19f7b3df563b
+  return internal::pfirst(internal::Packet2d(__builtin_ia32_sqrtsd(_mm_set_sd(x))));
+#else
+  return internal::pfirst(internal::Packet2d(_mm_sqrt_pd(_mm_set_sd(x))));
+#endif
+}
+
+} // end namespace numex
+
+} // end namespace Eigen
+
+#endif // EIGEN_MATH_FUNCTIONS_SSE_H
