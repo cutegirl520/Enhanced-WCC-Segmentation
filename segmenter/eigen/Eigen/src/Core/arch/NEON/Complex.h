@@ -377,4 +377,99 @@ template<> EIGEN_DEVICE_FUNC inline Packet1cd pgather<std::complex<double>, Pack
   Packet2d res = pset1<Packet2d>(0.0);
   res = vsetq_lane_f64(std::real(from[0*stride]), res, 0);
   res = vsetq_lane_f64(std::imag(from[0*stride]), res, 1);
-  return Packet1cd(re
+  return Packet1cd(res);
+}
+
+template<> EIGEN_DEVICE_FUNC inline void pscatter<std::complex<double>, Packet1cd>(std::complex<double>* to, const Packet1cd& from, Index stride)
+{
+  to[stride*0] = std::complex<double>(vgetq_lane_f64(from.v, 0), vgetq_lane_f64(from.v, 1));
+}
+
+
+template<> EIGEN_STRONG_INLINE std::complex<double>  pfirst<Packet1cd>(const Packet1cd& a)
+{
+  std::complex<double> EIGEN_ALIGN16 res;
+  pstore<std::complex<double> >(&res, a);
+
+  return res;
+}
+
+template<> EIGEN_STRONG_INLINE Packet1cd preverse(const Packet1cd& a) { return a; }
+
+template<> EIGEN_STRONG_INLINE std::complex<double> predux<Packet1cd>(const Packet1cd& a) { return pfirst(a); }
+
+template<> EIGEN_STRONG_INLINE Packet1cd preduxp<Packet1cd>(const Packet1cd* vecs) { return vecs[0]; }
+
+template<> EIGEN_STRONG_INLINE std::complex<double> predux_mul<Packet1cd>(const Packet1cd& a) { return pfirst(a); }
+
+template<int Offset>
+struct palign_impl<Offset,Packet1cd>
+{
+  static EIGEN_STRONG_INLINE void run(Packet1cd& /*first*/, const Packet1cd& /*second*/)
+  {
+    // FIXME is it sure we never have to align a Packet1cd?
+    // Even though a std::complex<double> has 16 bytes, it is not necessarily aligned on a 16 bytes boundary...
+  }
+};
+
+template<> struct conj_helper<Packet1cd, Packet1cd, false,true>
+{
+  EIGEN_STRONG_INLINE Packet1cd pmadd(const Packet1cd& x, const Packet1cd& y, const Packet1cd& c) const
+  { return padd(pmul(x,y),c); }
+
+  EIGEN_STRONG_INLINE Packet1cd pmul(const Packet1cd& a, const Packet1cd& b) const
+  {
+    return internal::pmul(a, pconj(b));
+  }
+};
+
+template<> struct conj_helper<Packet1cd, Packet1cd, true,false>
+{
+  EIGEN_STRONG_INLINE Packet1cd pmadd(const Packet1cd& x, const Packet1cd& y, const Packet1cd& c) const
+  { return padd(pmul(x,y),c); }
+
+  EIGEN_STRONG_INLINE Packet1cd pmul(const Packet1cd& a, const Packet1cd& b) const
+  {
+    return internal::pmul(pconj(a), b);
+  }
+};
+
+template<> struct conj_helper<Packet1cd, Packet1cd, true,true>
+{
+  EIGEN_STRONG_INLINE Packet1cd pmadd(const Packet1cd& x, const Packet1cd& y, const Packet1cd& c) const
+  { return padd(pmul(x,y),c); }
+
+  EIGEN_STRONG_INLINE Packet1cd pmul(const Packet1cd& a, const Packet1cd& b) const
+  {
+    return pconj(internal::pmul(a, b));
+  }
+};
+
+template<> EIGEN_STRONG_INLINE Packet1cd pdiv<Packet1cd>(const Packet1cd& a, const Packet1cd& b)
+{
+  // TODO optimize it for NEON
+  Packet1cd res = conj_helper<Packet1cd,Packet1cd,false,true>().pmul(a,b);
+  Packet2d s = pmul<Packet2d>(b.v, b.v);
+  Packet2d rev_s = preverse<Packet2d>(s);
+
+  return Packet1cd(pdiv(res.v, padd<Packet2d>(s,rev_s)));
+}
+
+EIGEN_STRONG_INLINE Packet1cd pcplxflip/*<Packet1cd>*/(const Packet1cd& x)
+{
+  return Packet1cd(preverse(Packet2d(x.v)));
+}
+
+EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet1cd,2>& kernel)
+{
+  Packet2d tmp = vcombine_f64(vget_high_f64(kernel.packet[0].v), vget_high_f64(kernel.packet[1].v));
+  kernel.packet[0].v = vcombine_f64(vget_low_f64(kernel.packet[0].v), vget_low_f64(kernel.packet[1].v));
+  kernel.packet[1].v = tmp;
+}
+#endif // EIGEN_ARCH_ARM64
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_COMPLEX_NEON_H
