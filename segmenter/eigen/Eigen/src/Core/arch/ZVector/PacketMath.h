@@ -493,4 +493,83 @@ template<> EIGEN_STRONG_INLINE Packet2d preduxp<Packet2d>(const Packet2d* vecs)
   return sum;
 }
 
-// Other reduction fu
+// Other reduction functions:
+// mul
+template<> EIGEN_STRONG_INLINE int predux_mul<Packet4i>(const Packet4i& a)
+{
+  EIGEN_ALIGN16 int aux[4];
+  pstore(aux, a);
+  return aux[0] * aux[1] * aux[2] * aux[3];
+}
+
+template<> EIGEN_STRONG_INLINE double predux_mul<Packet2d>(const Packet2d& a)
+{
+  return pfirst(pmul(a, reinterpret_cast<Packet2d>(vec_sld(reinterpret_cast<Packet4i>(a), reinterpret_cast<Packet4i>(a), 8))));
+}
+
+// min
+template<> EIGEN_STRONG_INLINE int predux_min<Packet4i>(const Packet4i& a)
+{
+  Packet4i b, res;
+  b   = pmin<Packet4i>(a, vec_sld(a, a, 8));
+  res = pmin<Packet4i>(b, vec_sld(b, b, 4));
+  return pfirst(res);
+}
+
+template<> EIGEN_STRONG_INLINE double predux_min<Packet2d>(const Packet2d& a)
+{
+  return pfirst(pmin<Packet2d>(a, reinterpret_cast<Packet2d>(vec_sld(reinterpret_cast<Packet4i>(a), reinterpret_cast<Packet4i>(a), 8))));
+}
+
+// max
+template<> EIGEN_STRONG_INLINE int predux_max<Packet4i>(const Packet4i& a)
+{
+  Packet4i b, res;
+  b = pmax<Packet4i>(a, vec_sld(a, a, 8));
+  res = pmax<Packet4i>(b, vec_sld(b, b, 4));
+  return pfirst(res);
+}
+
+// max
+template<> EIGEN_STRONG_INLINE double predux_max<Packet2d>(const Packet2d& a)
+{
+  return pfirst(pmax<Packet2d>(a, reinterpret_cast<Packet2d>(vec_sld(reinterpret_cast<Packet4i>(a), reinterpret_cast<Packet4i>(a), 8))));
+}
+
+EIGEN_DEVICE_FUNC inline void
+ptranspose(PacketBlock<Packet4i,4>& kernel) {
+  Packet4i t0 = vec_mergeh(kernel.packet[0], kernel.packet[2]);
+  Packet4i t1 = vec_mergel(kernel.packet[0], kernel.packet[2]);
+  Packet4i t2 = vec_mergeh(kernel.packet[1], kernel.packet[3]);
+  Packet4i t3 = vec_mergel(kernel.packet[1], kernel.packet[3]);
+  kernel.packet[0] = vec_mergeh(t0, t2);
+  kernel.packet[1] = vec_mergel(t0, t2);
+  kernel.packet[2] = vec_mergeh(t1, t3);
+  kernel.packet[3] = vec_mergel(t1, t3);
+}
+
+EIGEN_DEVICE_FUNC inline void
+ptranspose(PacketBlock<Packet2d,2>& kernel) {
+  Packet2d t0 = vec_perm(kernel.packet[0], kernel.packet[1], p16uc_TRANSPOSE64_HI);
+  Packet2d t1 = vec_perm(kernel.packet[0], kernel.packet[1], p16uc_TRANSPOSE64_LO);
+  kernel.packet[0] = t0;
+  kernel.packet[1] = t1;
+}
+
+template<> EIGEN_STRONG_INLINE Packet4i pblend(const Selector<4>& ifPacket, const Packet4i& thenPacket, const Packet4i& elsePacket) {
+  Packet4ui select = { ifPacket.select[0], ifPacket.select[1], ifPacket.select[2], ifPacket.select[3] };
+  Packet4ui mask = vec_cmpeq(select, reinterpret_cast<Packet4ui>(p4i_ONE));
+  return vec_sel(elsePacket, thenPacket, mask);
+}
+
+template<> EIGEN_STRONG_INLINE Packet2d pblend(const Selector<2>& ifPacket, const Packet2d& thenPacket, const Packet2d& elsePacket) {
+  Packet2ul select = { ifPacket.select[0], ifPacket.select[1] };
+  Packet2ul mask = vec_cmpeq(select, reinterpret_cast<Packet2ul>(p2l_ONE));
+  return vec_sel(elsePacket, thenPacket, mask);
+}
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_PACKET_MATH_ZVECTOR_H
