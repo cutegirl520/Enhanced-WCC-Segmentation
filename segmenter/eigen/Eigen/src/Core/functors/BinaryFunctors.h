@@ -371,4 +371,112 @@ struct scalar_quotient_op  : binary_op_base<LhsScalar,RhsScalar>
   { return internal::pdiv(a,b); }
 };
 template<typename LhsScalar,typename RhsScalar>
-struct functor_traits<s
+struct functor_traits<scalar_quotient_op<LhsScalar,RhsScalar> > {
+  typedef typename scalar_quotient_op<LhsScalar,RhsScalar>::result_type result_type;
+  enum {
+    PacketAccess = is_same<LhsScalar,RhsScalar>::value && packet_traits<LhsScalar>::HasDiv && packet_traits<RhsScalar>::HasDiv,
+    Cost = NumTraits<result_type>::template Div<PacketAccess>::Cost
+  };
+};
+
+
+
+/** \internal
+  * \brief Template functor to compute the and of two booleans
+  *
+  * \sa class CwiseBinaryOp, ArrayBase::operator&&
+  */
+struct scalar_boolean_and_op {
+  EIGEN_EMPTY_STRUCT_CTOR(scalar_boolean_and_op)
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool operator() (const bool& a, const bool& b) const { return a && b; }
+};
+template<> struct functor_traits<scalar_boolean_and_op> {
+  enum {
+    Cost = NumTraits<bool>::AddCost,
+    PacketAccess = false
+  };
+};
+
+/** \internal
+  * \brief Template functor to compute the or of two booleans
+  *
+  * \sa class CwiseBinaryOp, ArrayBase::operator||
+  */
+struct scalar_boolean_or_op {
+  EIGEN_EMPTY_STRUCT_CTOR(scalar_boolean_or_op)
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool operator() (const bool& a, const bool& b) const { return a || b; }
+};
+template<> struct functor_traits<scalar_boolean_or_op> {
+  enum {
+    Cost = NumTraits<bool>::AddCost,
+    PacketAccess = false
+  };
+};
+
+/** \internal
+ * \brief Template functor to compute the xor of two booleans
+ *
+ * \sa class CwiseBinaryOp, ArrayBase::operator^
+ */
+struct scalar_boolean_xor_op {
+  EIGEN_EMPTY_STRUCT_CTOR(scalar_boolean_xor_op)
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool operator() (const bool& a, const bool& b) const { return a ^ b; }
+};
+template<> struct functor_traits<scalar_boolean_xor_op> {
+  enum {
+    Cost = NumTraits<bool>::AddCost,
+    PacketAccess = false
+  };
+};
+
+
+
+//---------- binary functors bound to a constant, thus appearing as a unary functor ----------
+
+// The following two classes permits to turn any binary functor into a unary one with one argument bound to a constant value.
+// They are analogues to std::binder1st/binder2nd but with the following differences:
+//  - they are compatible with packetOp
+//  - they are portable across C++ versions (the std::binder* are deprecated in C++11)
+template<typename BinaryOp> struct bind1st_op : BinaryOp {
+
+  typedef typename BinaryOp::first_argument_type  first_argument_type;
+  typedef typename BinaryOp::second_argument_type second_argument_type;
+  typedef typename BinaryOp::result_type          result_type;
+
+  bind1st_op(const first_argument_type &val) : m_value(val) {}
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const result_type operator() (const second_argument_type& b) const { return BinaryOp::operator()(m_value,b); }
+
+  template<typename Packet>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const Packet packetOp(const Packet& b) const
+  { return BinaryOp::packetOp(internal::pset1<Packet>(m_value), b); }
+
+  first_argument_type m_value;
+};
+template<typename BinaryOp> struct functor_traits<bind1st_op<BinaryOp> > : functor_traits<BinaryOp> {};
+
+
+template<typename BinaryOp> struct bind2nd_op : BinaryOp {
+
+  typedef typename BinaryOp::first_argument_type  first_argument_type;
+  typedef typename BinaryOp::second_argument_type second_argument_type;
+  typedef typename BinaryOp::result_type          result_type;
+
+  bind2nd_op(const second_argument_type &val) : m_value(val) {}
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const result_type operator() (const first_argument_type& a) const { return BinaryOp::operator()(a,m_value); }
+
+  template<typename Packet>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const Packet packetOp(const Packet& a) const
+  { return BinaryOp::packetOp(a,internal::pset1<Packet>(m_value)); }
+
+  second_argument_type m_value;
+};
+template<typename BinaryOp> struct functor_traits<bind2nd_op<BinaryOp> > : functor_traits<BinaryOp> {};
+
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_BINARY_FUNCTORS_H
