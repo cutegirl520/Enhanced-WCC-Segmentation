@@ -274,4 +274,219 @@ class level3_blocking
 template<int StorageOrder, typename _LhsScalar, typename _RhsScalar, int MaxRows, int MaxCols, int MaxDepth, int KcFactor>
 class gemm_blocking_space<StorageOrder,_LhsScalar,_RhsScalar,MaxRows, MaxCols, MaxDepth, KcFactor, true /* == FiniteAtCompileTime */>
   : public level3_blocking<
-      typename conditional<StorageOrder==RowMajor,_RhsScalar,_LhsScal
+      typename conditional<StorageOrder==RowMajor,_RhsScalar,_LhsScalar>::type,
+      typename conditional<StorageOrder==RowMajor,_LhsScalar,_RhsScalar>::type>
+{
+    enum {
+      Transpose = StorageOrder==RowMajor,
+      ActualRows = Transpose ? MaxCols : MaxRows,
+      ActualCols = Transpose ? MaxRows : MaxCols
+    };
+    typedef typename conditional<Transpose,_RhsScalar,_LhsScalar>::type LhsScalar;
+    typedef typename conditional<Transpose,_LhsScalar,_RhsScalar>::type RhsScalar;
+    typedef gebp_traits<LhsScalar,RhsScalar> Traits;
+    enum {
+      SizeA = ActualRows * MaxDepth,
+      SizeB = ActualCols * MaxDepth
+    };
+
+#if EIGEN_MAX_STATIC_ALIGN_BYTES >= EIGEN_DEFAULT_ALIGN_BYTES
+    EIGEN_ALIGN_MAX LhsScalar m_staticA[SizeA];
+    EIGEN_ALIGN_MAX RhsScalar m_staticB[SizeB];
+#else
+    EIGEN_ALIGN_MAX char m_staticA[SizeA * sizeof(LhsScalar) + EIGEN_DEFAULT_ALIGN_BYTES-1];
+    EIGEN_ALIGN_MAX char m_staticB[SizeB * sizeof(RhsScalar) + EIGEN_DEFAULT_ALIGN_BYTES-1];
+#endif
+
+  public:
+
+    gemm_blocking_space(Index /*rows*/, Index /*cols*/, Index /*depth*/, Index /*num_threads*/, bool /*full_rows = false*/)
+    {
+      this->m_mc = ActualRows;
+      this->m_nc = ActualCols;
+      this->m_kc = MaxDepth;
+#if EIGEN_MAX_STATIC_ALIGN_BYTES >= EIGEN_DEFAULT_ALIGN_BYTES
+      this->m_blockA = m_staticA;
+      this->m_blockB = m_staticB;
+#else
+      this->m_blockA = reinterpret_cast<LhsScalar*>((internal::UIntPtr(m_staticA) + (EIGEN_DEFAULT_ALIGN_BYTES-1)) & ~std::size_t(EIGEN_DEFAULT_ALIGN_BYTES-1));
+      this->m_blockB = reinterpret_cast<RhsScalar*>((internal::UIntPtr(m_staticB) + (EIGEN_DEFAULT_ALIGN_BYTES-1)) & ~std::size_t(EIGEN_DEFAULT_ALIGN_BYTES-1));
+#endif
+    }
+    
+    void initParallel(Index, Index, Index, Index)
+    {}
+
+    inline void allocateA() {}
+    inline void allocateB() {}
+    inline void allocateAll() {}
+};
+
+template<int StorageOrder, typename _LhsScalar, typename _RhsScalar, int MaxRows, int MaxCols, int MaxDepth, int KcFactor>
+class gemm_blocking_space<StorageOrder,_LhsScalar,_RhsScalar,MaxRows, MaxCols, MaxDepth, KcFactor, false>
+  : public level3_blocking<
+      typename conditional<StorageOrder==RowMajor,_RhsScalar,_LhsScalar>::type,
+      typename conditional<StorageOrder==RowMajor,_LhsScalar,_RhsScalar>::type>
+{
+    enum {
+      Transpose = StorageOrder==RowMajor
+    };
+    typedef typename conditional<Transpose,_RhsScalar,_LhsScalar>::type LhsScalar;
+    typedef typename conditional<Transpose,_LhsScalar,_RhsScalar>::type RhsScalar;
+    typedef gebp_traits<LhsScalar,RhsScalar> Traits;
+
+    Index m_sizeA;
+    Index m_sizeB;
+
+  public:
+
+    gemm_blocking_space(Index rows, Index cols, Index depth, Index num_threads, bool l3_blocking)
+    {
+      this->m_mc = Transpose ? cols : rows;
+      this->m_nc = Transpose ? rows : cols;
+      this->m_kc = depth;
+
+      if(l3_blocking)
+      {
+        computeProductBlockingSizes<LhsScalar,RhsScalar,KcFactor>(this->m_kc, this->m_mc, this->m_nc, num_threads);
+      }
+      else  // no l3 blocking
+      {
+        Index n = this->m_nc;
+        computeProductBlockingSizes<LhsScalar,RhsScalar,KcFactor>(this->m_kc, this->m_mc, n, num_threads);
+      }
+
+      m_sizeA = this->m_mc * this->m_kc;
+      m_sizeB = this->m_kc * this->m_nc;
+    }
+    
+    void initParallel(Index rows, Index cols, Index depth, Index num_threads)
+    {
+      this->m_mc = Transpose ? cols : rows;
+      this->m_nc = Transpose ? rows : cols;
+      this->m_kc = depth;
+      
+      eigen_internal_assert(this->m_blockA==0 && this->m_blockB==0);      
+      Index m = this->m_mc;
+      computeProductBlockingSizes<LhsScalar,RhsScalar,KcFactor>(this->m_kc, m, this->m_nc, num_threads);
+      m_sizeA = this->m_mc * this->m_kc;
+      m_sizeB = this->m_kc * this->m_nc;
+    }
+
+    void allocateA()
+    {
+      if(this->m_blockA==0)
+        this->m_blockA = aligned_new<LhsScalar>(m_sizeA);
+    }
+
+    void allocateB()
+    {
+      if(this->m_blockB==0)
+        this->m_blockB = aligned_new<RhsScalar>(m_sizeB);
+    }
+
+    void allocateAll()
+    {
+      allocateA();
+      allocateB();
+    }
+
+    ~gemm_blocking_space()
+    {
+      aligned_delete(this->m_blockA, m_sizeA);
+      aligned_delete(this->m_blockB, m_sizeB);
+    }
+};
+
+} // end namespace internal
+
+namespace internal {
+  
+template<typename Lhs, typename Rhs>
+struct generic_product_impl<Lhs,Rhs,DenseShape,DenseShape,GemmProduct>
+  : generic_product_impl_base<Lhs,Rhs,generic_product_impl<Lhs,Rhs,DenseShape,DenseShape,GemmProduct> >
+{
+  typedef typename Product<Lhs,Rhs>::Scalar Scalar;
+  typedef typename Lhs::Scalar LhsScalar;
+  typedef typename Rhs::Scalar RhsScalar;
+  
+  typedef internal::blas_traits<Lhs> LhsBlasTraits;
+  typedef typename LhsBlasTraits::DirectLinearAccessType ActualLhsType;
+  typedef typename internal::remove_all<ActualLhsType>::type ActualLhsTypeCleaned;
+  
+  typedef internal::blas_traits<Rhs> RhsBlasTraits;
+  typedef typename RhsBlasTraits::DirectLinearAccessType ActualRhsType;
+  typedef typename internal::remove_all<ActualRhsType>::type ActualRhsTypeCleaned;
+  
+  enum {
+    MaxDepthAtCompileTime = EIGEN_SIZE_MIN_PREFER_FIXED(Lhs::MaxColsAtCompileTime,Rhs::MaxRowsAtCompileTime)
+  };
+  
+  typedef generic_product_impl<Lhs,Rhs,DenseShape,DenseShape,CoeffBasedProductMode> lazyproduct;
+  
+  template<typename Dst>
+  static void evalTo(Dst& dst, const Lhs& lhs, const Rhs& rhs)
+  {
+    if((rhs.rows()+dst.rows()+dst.cols())<20 && rhs.rows()>0)
+      lazyproduct::evalTo(dst, lhs, rhs);
+    else
+    {
+      dst.setZero();
+      scaleAndAddTo(dst, lhs, rhs, Scalar(1));
+    }
+  }
+
+  template<typename Dst>
+  static void addTo(Dst& dst, const Lhs& lhs, const Rhs& rhs)
+  {
+    if((rhs.rows()+dst.rows()+dst.cols())<20 && rhs.rows()>0)
+      lazyproduct::addTo(dst, lhs, rhs);
+    else
+      scaleAndAddTo(dst,lhs, rhs, Scalar(1));
+  }
+
+  template<typename Dst>
+  static void subTo(Dst& dst, const Lhs& lhs, const Rhs& rhs)
+  {
+    if((rhs.rows()+dst.rows()+dst.cols())<20 && rhs.rows()>0)
+      lazyproduct::subTo(dst, lhs, rhs);
+    else
+      scaleAndAddTo(dst, lhs, rhs, Scalar(-1));
+  }
+  
+  template<typename Dest>
+  static void scaleAndAddTo(Dest& dst, const Lhs& a_lhs, const Rhs& a_rhs, const Scalar& alpha)
+  {
+    eigen_assert(dst.rows()==a_lhs.rows() && dst.cols()==a_rhs.cols());
+    if(a_lhs.cols()==0 || a_lhs.rows()==0 || a_rhs.cols()==0)
+      return;
+
+    typename internal::add_const_on_value_type<ActualLhsType>::type lhs = LhsBlasTraits::extract(a_lhs);
+    typename internal::add_const_on_value_type<ActualRhsType>::type rhs = RhsBlasTraits::extract(a_rhs);
+
+    Scalar actualAlpha = alpha * LhsBlasTraits::extractScalarFactor(a_lhs)
+                               * RhsBlasTraits::extractScalarFactor(a_rhs);
+
+    typedef internal::gemm_blocking_space<(Dest::Flags&RowMajorBit) ? RowMajor : ColMajor,LhsScalar,RhsScalar,
+            Dest::MaxRowsAtCompileTime,Dest::MaxColsAtCompileTime,MaxDepthAtCompileTime> BlockingType;
+
+    typedef internal::gemm_functor<
+      Scalar, Index,
+      internal::general_matrix_matrix_product<
+        Index,
+        LhsScalar, (ActualLhsTypeCleaned::Flags&RowMajorBit) ? RowMajor : ColMajor, bool(LhsBlasTraits::NeedToConjugate),
+        RhsScalar, (ActualRhsTypeCleaned::Flags&RowMajorBit) ? RowMajor : ColMajor, bool(RhsBlasTraits::NeedToConjugate),
+        (Dest::Flags&RowMajorBit) ? RowMajor : ColMajor>,
+      ActualLhsTypeCleaned, ActualRhsTypeCleaned, Dest, BlockingType> GemmFunctor;
+
+    BlockingType blocking(dst.rows(), dst.cols(), lhs.cols(), 1, true);
+    internal::parallelize_gemm<(Dest::MaxRowsAtCompileTime>32 || Dest::MaxRowsAtCompileTime==Dynamic)>
+                              (GemmFunctor(lhs, rhs, dst, actualAlpha, blocking), a_lhs.rows(), a_rhs.cols(), Dest::Flags&RowMajorBit);
+  }
+};
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_GENERAL_MATRIX_MATRIX_H
