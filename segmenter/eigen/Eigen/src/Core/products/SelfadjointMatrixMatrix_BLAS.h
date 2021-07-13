@@ -266,4 +266,10 @@ struct product_selfadjoint_matrix<EIGTYPE,Index,LhsStorageOrder,false,ConjugateL
 EIGEN_BLAS_SYMM_R(double, double, d, d)
 EIGEN_BLAS_SYMM_R(float, float, f, s)
 EIGEN_BLAS_HEMM_R(dcomplex, double, cd, z)
-EIGEN_BLAS_HEMM_R(sco
+EIGEN_BLAS_HEMM_R(scomplex, float, cf, c)
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_SELFADJOINT_MATRIX_MATRIX_BLAS_H
