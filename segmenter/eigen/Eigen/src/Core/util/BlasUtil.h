@@ -361,3 +361,20 @@ struct extract_data_selector {
   {
     return blas_traits<T>::extract(m).data();
   }
+};
+
+template<typename T>
+struct extract_data_selector<T,false> {
+  static typename T::Scalar* run(const T&) { return 0; }
+};
+
+template<typename T> const typename T::Scalar* extract_data(const T& m)
+{
+  return extract_data_selector<T>::run(m);
+}
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_BLASUTIL_H
