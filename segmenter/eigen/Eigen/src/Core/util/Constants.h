@@ -262,4 +262,286 @@ enum CornerType { TopLeft, TopRight, BottomLeft, BottomRight };
 enum DirectionType { 
   /** For Reverse, all columns are reversed; 
     * for PartialReduxExpr and VectorwiseOp, act on columns. */
-  
+  Vertical, 
+  /** For Reverse, all rows are reversed; 
+    * for PartialReduxExpr and VectorwiseOp, act on rows. */
+  Horizontal, 
+  /** For Reverse, both rows and columns are reversed; 
+    * not used for PartialReduxExpr and VectorwiseOp. */
+  BothDirections 
+};
+
+/** \internal \ingroup enums
+  * Enum to specify how to traverse the entries of a matrix. */
+enum TraversalType {
+  /** \internal Default traversal, no vectorization, no index-based access */
+  DefaultTraversal,
+  /** \internal No vectorization, use index-based access to have only one for loop instead of 2 nested loops */
+  LinearTraversal,
+  /** \internal Equivalent to a slice vectorization for fixed-size matrices having good alignment
+    * and good size */
+  InnerVectorizedTraversal,
+  /** \internal Vectorization path using a single loop plus scalar loops for the
+    * unaligned boundaries */
+  LinearVectorizedTraversal,
+  /** \internal Generic vectorization path using one vectorized loop per row/column with some
+    * scalar loops to handle the unaligned boundaries */
+  SliceVectorizedTraversal,
+  /** \internal Special case to properly handle incompatible scalar types or other defecting cases*/
+  InvalidTraversal,
+  /** \internal Evaluate all entries at once */
+  AllAtOnceTraversal
+};
+
+/** \internal \ingroup enums
+  * Enum to specify whether to unroll loops when traversing over the entries of a matrix. */
+enum UnrollingType {
+  /** \internal Do not unroll loops. */
+  NoUnrolling,
+  /** \internal Unroll only the inner loop, but not the outer loop. */
+  InnerUnrolling,
+  /** \internal Unroll both the inner and the outer loop. If there is only one loop, 
+    * because linear traversal is used, then unroll that loop. */
+  CompleteUnrolling
+};
+
+/** \internal \ingroup enums
+  * Enum to specify whether to use the default (built-in) implementation or the specialization. */
+enum SpecializedType {
+  Specialized,
+  BuiltIn
+};
+
+/** \ingroup enums
+  * Enum containing possible values for the \p _Options template parameter of
+  * Matrix, Array and BandMatrix. */
+enum StorageOptions {
+  /** Storage order is column major (see \ref TopicStorageOrders). */
+  ColMajor = 0,
+  /** Storage order is row major (see \ref TopicStorageOrders). */
+  RowMajor = 0x1,  // it is only a coincidence that this is equal to RowMajorBit -- don't rely on that
+  /** Align the matrix itself if it is vectorizable fixed-size */
+  AutoAlign = 0,
+  /** Don't require alignment for the matrix itself (the array of coefficients, if dynamically allocated, may still be requested to be aligned) */ // FIXME --- clarify the situation
+  DontAlign = 0x2
+};
+
+/** \ingroup enums
+  * Enum for specifying whether to apply or solve on the left or right. */
+enum SideType {
+  /** Apply transformation on the left. */
+  OnTheLeft = 1,  
+  /** Apply transformation on the right. */
+  OnTheRight = 2  
+};
+
+/* the following used to be written as:
+ *
+ *   struct NoChange_t {};
+ *   namespace {
+ *     EIGEN_UNUSED NoChange_t NoChange;
+ *   }
+ *
+ * on the ground that it feels dangerous to disambiguate overloaded functions on enum/integer types.  
+ * However, this leads to "variable declared but never referenced" warnings on Intel Composer XE,
+ * and we do not know how to get rid of them (bug 450).
+ */
+
+enum NoChange_t   { NoChange };
+enum Sequential_t { Sequential };
+enum Default_t    { Default };
+
+/** \internal \ingroup enums
+  * Used in AmbiVector. */
+enum AmbiVectorMode {
+  IsDense         = 0,
+  IsSparse
+};
+
+/** \ingroup enums
+  * Used as template parameter in DenseCoeffBase and MapBase to indicate 
+  * which accessors should be provided. */
+enum AccessorLevels {
+  /** Read-only access via a member function. */
+  ReadOnlyAccessors, 
+  /** Read/write access via member functions. */
+  WriteAccessors, 
+  /** Direct read-only access to the coefficients. */
+  DirectAccessors, 
+  /** Direct read/write access to the coefficients. */
+  DirectWriteAccessors
+};
+
+/** \ingroup enums
+  * Enum with options to give to various decompositions. */
+enum DecompositionOptions {
+  /** \internal Not used (meant for LDLT?). */
+  Pivoting            = 0x01, 
+  /** \internal Not used (meant for LDLT?). */
+  NoPivoting          = 0x02, 
+  /** Used in JacobiSVD to indicate that the square matrix U is to be computed. */
+  ComputeFullU        = 0x04,
+  /** Used in JacobiSVD to indicate that the thin matrix U is to be computed. */
+  ComputeThinU        = 0x08,
+  /** Used in JacobiSVD to indicate that the square matrix V is to be computed. */
+  ComputeFullV        = 0x10,
+  /** Used in JacobiSVD to indicate that the thin matrix V is to be computed. */
+  ComputeThinV        = 0x20,
+  /** Used in SelfAdjointEigenSolver and GeneralizedSelfAdjointEigenSolver to specify
+    * that only the eigenvalues are to be computed and not the eigenvectors. */
+  EigenvaluesOnly     = 0x40,
+  /** Used in SelfAdjointEigenSolver and GeneralizedSelfAdjointEigenSolver to specify
+    * that both the eigenvalues and the eigenvectors are to be computed. */
+  ComputeEigenvectors = 0x80,
+  /** \internal */
+  EigVecMask = EigenvaluesOnly | ComputeEigenvectors,
+  /** Used in GeneralizedSelfAdjointEigenSolver to indicate that it should
+    * solve the generalized eigenproblem \f$ Ax = \lambda B x \f$. */
+  Ax_lBx              = 0x100,
+  /** Used in GeneralizedSelfAdjointEigenSolver to indicate that it should
+    * solve the generalized eigenproblem \f$ ABx = \lambda x \f$. */
+  ABx_lx              = 0x200,
+  /** Used in GeneralizedSelfAdjointEigenSolver to indicate that it should
+    * solve the generalized eigenproblem \f$ BAx = \lambda x \f$. */
+  BAx_lx              = 0x400,
+  /** \internal */
+  GenEigMask = Ax_lBx | ABx_lx | BAx_lx
+};
+
+/** \ingroup enums
+  * Possible values for the \p QRPreconditioner template parameter of JacobiSVD. */
+enum QRPreconditioners {
+  /** Do not specify what is to be done if the SVD of a non-square matrix is asked for. */
+  NoQRPreconditioner,
+  /** Use a QR decomposition without pivoting as the first step. */
+  HouseholderQRPreconditioner,
+  /** Use a QR decomposition with column pivoting as the first step. */
+  ColPivHouseholderQRPreconditioner,
+  /** Use a QR decomposition with full pivoting as the first step. */
+  FullPivHouseholderQRPreconditioner
+};
+
+#ifdef Success
+#error The preprocessor symbol 'Success' is defined, possibly by the X11 header file X.h
+#endif
+
+/** \ingroup enums
+  * Enum for reporting the status of a computation. */
+enum ComputationInfo {
+  /** Computation was successful. */
+  Success = 0,        
+  /** The provided data did not satisfy the prerequisites. */
+  NumericalIssue = 1, 
+  /** Iterative procedure did not converge. */
+  NoConvergence = 2,
+  /** The inputs are invalid, or the algorithm has been improperly called.
+    * When assertions are enabled, such errors trigger an assert. */
+  InvalidInput = 3
+};
+
+/** \ingroup enums
+  * Enum used to specify how a particular transformation is stored in a matrix.
+  * \sa Transform, Hyperplane::transform(). */
+enum TransformTraits {
+  /** Transformation is an isometry. */
+  Isometry      = 0x1,
+  /** Transformation is an affine transformation stored as a (Dim+1)^2 matrix whose last row is 
+    * assumed to be [0 ... 0 1]. */
+  Affine        = 0x2,
+  /** Transformation is an affine transformation stored as a (Dim) x (Dim+1) matrix. */
+  AffineCompact = 0x10 | Affine,
+  /** Transformation is a general projective transformation stored as a (Dim+1)^2 matrix. */
+  Projective    = 0x20
+};
+
+/** \internal \ingroup enums
+  * Enum used to choose between implementation depending on the computer architecture. */
+namespace Architecture
+{
+  enum Type {
+    Generic = 0x0,
+    SSE = 0x1,
+    AltiVec = 0x2,
+    VSX = 0x3,
+    NEON = 0x4,
+#if defined EIGEN_VECTORIZE_SSE
+    Target = SSE
+#elif defined EIGEN_VECTORIZE_ALTIVEC
+    Target = AltiVec
+#elif defined EIGEN_VECTORIZE_VSX
+    Target = VSX
+#elif defined EIGEN_VECTORIZE_NEON
+    Target = NEON
+#else
+    Target = Generic
+#endif
+  };
+}
+
+/** \internal \ingroup enums
+  * Enum used as template parameter in Product and product evaluators. */
+enum ProductImplType
+{ DefaultProduct=0, LazyProduct, AliasFreeProduct, CoeffBasedProductMode, LazyCoeffBasedProductMode, OuterProduct, InnerProduct, GemvProduct, GemmProduct };
+
+/** \internal \ingroup enums
+  * Enum used in experimental parallel implementation. */
+enum Action {GetAction, SetAction};
+
+/** The type used to identify a dense storage. */
+struct Dense {};
+
+/** The type used to identify a general sparse storage. */
+struct Sparse {};
+
+/** The type used to identify a general solver (factored) storage. */
+struct SolverStorage {};
+
+/** The type used to identify a permutation storage. */
+struct PermutationStorage {};
+
+/** The type used to identify a permutation storage. */
+struct TranspositionsStorage {};
+
+/** The type used to identify a matrix expression */
+struct MatrixXpr {};
+
+/** The type used to identify an array expression */
+struct ArrayXpr {};
+
+// An evaluator must define its shape. By default, it can be one of the following:
+struct DenseShape             { static std::string debugName() { return "DenseShape"; } };
+struct SolverShape            { static std::string debugName() { return "SolverShape"; } };
+struct HomogeneousShape       { static std::string debugName() { return "HomogeneousShape"; } };
+struct DiagonalShape          { static std::string debugName() { return "DiagonalShape"; } };
+struct BandShape              { static std::string debugName() { return "BandShape"; } };
+struct TriangularShape        { static std::string debugName() { return "TriangularShape"; } };
+struct SelfAdjointShape       { static std::string debugName() { return "SelfAdjointShape"; } };
+struct PermutationShape       { static std::string debugName() { return "PermutationShape"; } };
+struct TranspositionsShape    { static std::string debugName() { return "TranspositionsShape"; } };
+struct SparseShape            { static std::string debugName() { return "SparseShape"; } };
+
+namespace internal {
+
+  // random access iterators based on coeff*() accessors.
+struct IndexBased {};
+
+// evaluator based on iterators to access coefficients. 
+struct IteratorBased {};
+
+/** \internal
+ * Constants for comparison functors
+ */
+enum ComparisonName {
+  cmp_EQ = 0,
+  cmp_LT = 1,
+  cmp_LE = 2,
+  cmp_UNORD = 3,
+  cmp_NEQ = 4,
+  cmp_GT = 5,
+  cmp_GE = 6
+};
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_CONSTANTS_H
