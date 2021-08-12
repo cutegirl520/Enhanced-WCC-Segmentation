@@ -440,4 +440,243 @@ struct transfer_constness
   * a*d. Evaluating can be beneficial for example if every coefficient access in the resulting expression causes
   * many coefficient accesses in the nested expressions -- as is the case with matrix product for example.
   *
-  * \tparam T the type of the expre
+  * \tparam T the type of the expression being nested.
+  * \tparam n the number of coefficient accesses in the nested expression for each coefficient access in the bigger expression.
+  * \tparam PlainObject the type of the temporary if needed.
+  */
+template<typename T, int n, typename PlainObject = typename plain_object_eval<T>::type> struct nested_eval
+{
+  enum {
+    ScalarReadCost = NumTraits<typename traits<T>::Scalar>::ReadCost,
+    CoeffReadCost = evaluator<T>::CoeffReadCost,  // NOTE What if an evaluator evaluate itself into a tempory?
+                                                  //      Then CoeffReadCost will be small (e.g., 1) but we still have to evaluate, especially if n>1.
+                                                  //      This situation is already taken care by the EvalBeforeNestingBit flag, which is turned ON
+                                                  //      for all evaluator creating a temporary. This flag is then propagated by the parent evaluators.
+                                                  //      Another solution could be to count the number of temps?
+    NAsInteger = n == Dynamic ? HugeCost : n,
+    CostEval   = (NAsInteger+1) * ScalarReadCost + CoeffReadCost,
+    CostNoEval = NAsInteger * CoeffReadCost
+  };
+
+  typedef typename conditional<
+        ( (int(evaluator<T>::Flags) & EvalBeforeNestingBit) ||
+          (int(CostEval) < int(CostNoEval)) ),
+        PlainObject,
+        typename ref_selector<T>::type
+  >::type type;
+};
+
+template<typename T>
+EIGEN_DEVICE_FUNC
+inline T* const_cast_ptr(const T* ptr)
+{
+  return const_cast<T*>(ptr);
+}
+
+template<typename Derived, typename XprKind = typename traits<Derived>::XprKind>
+struct dense_xpr_base
+{
+  /* dense_xpr_base should only ever be used on dense expressions, thus falling either into the MatrixXpr or into the ArrayXpr cases */
+};
+
+template<typename Derived>
+struct dense_xpr_base<Derived, MatrixXpr>
+{
+  typedef MatrixBase<Derived> type;
+};
+
+template<typename Derived>
+struct dense_xpr_base<Derived, ArrayXpr>
+{
+  typedef ArrayBase<Derived> type;
+};
+
+template<typename Derived, typename XprKind = typename traits<Derived>::XprKind, typename StorageKind = typename traits<Derived>::StorageKind>
+struct generic_xpr_base;
+
+template<typename Derived, typename XprKind>
+struct generic_xpr_base<Derived, XprKind, Dense>
+{
+  typedef typename dense_xpr_base<Derived,XprKind>::type type;
+};
+
+template<typename XprType, typename CastType> struct cast_return_type
+{
+  typedef typename XprType::Scalar CurrentScalarType;
+  typedef typename remove_all<CastType>::type _CastType;
+  typedef typename _CastType::Scalar NewScalarType;
+  typedef typename conditional<is_same<CurrentScalarType,NewScalarType>::value,
+                              const XprType&,CastType>::type type;
+};
+
+template <typename A, typename B> struct promote_storage_type;
+
+template <typename A> struct promote_storage_type<A,A>
+{
+  typedef A ret;
+};
+template <typename A> struct promote_storage_type<A, const A>
+{
+  typedef A ret;
+};
+template <typename A> struct promote_storage_type<const A, A>
+{
+  typedef A ret;
+};
+
+/** \internal Specify the "storage kind" of applying a coefficient-wise
+  * binary operations between two expressions of kinds A and B respectively.
+  * The template parameter Functor permits to specialize the resulting storage kind wrt to
+  * the functor.
+  * The default rules are as follows:
+  * \code
+  * A      op A      -> A
+  * A      op dense  -> dense
+  * dense  op B      -> dense
+  * sparse op dense  -> sparse
+  * dense  op sparse -> sparse
+  * \endcode
+  */
+template <typename A, typename B, typename Functor> struct cwise_promote_storage_type;
+
+template <typename A, typename Functor>                   struct cwise_promote_storage_type<A,A,Functor>                                      { typedef A      ret; };
+template <typename Functor>                               struct cwise_promote_storage_type<Dense,Dense,Functor>                              { typedef Dense  ret; };
+template <typename A, typename Functor>                   struct cwise_promote_storage_type<A,Dense,Functor>                                  { typedef Dense  ret; };
+template <typename B, typename Functor>                   struct cwise_promote_storage_type<Dense,B,Functor>                                  { typedef Dense  ret; };
+template <typename Functor>                               struct cwise_promote_storage_type<Sparse,Dense,Functor>                             { typedef Sparse ret; };
+template <typename Functor>                               struct cwise_promote_storage_type<Dense,Sparse,Functor>                             { typedef Sparse ret; };
+
+/** \internal Specify the "storage kind" of multiplying an expression of kind A with kind B.
+  * The template parameter ProductTag permits to specialize the resulting storage kind wrt to
+  * some compile-time properties of the product: GemmProduct, GemvProduct, OuterProduct, InnerProduct.
+  * The default rules are as follows:
+  * \code
+  *  K * K            -> K
+  *  dense * K        -> dense
+  *  K * dense        -> dense
+  *  diag * K         -> K
+  *  K * diag         -> K
+  *  Perm * K         -> K
+  * K * Perm          -> K
+  * \endcode
+  */
+template <typename A, typename B, int ProductTag> struct product_promote_storage_type;
+
+template <typename A, int ProductTag> struct product_promote_storage_type<A,                  A,                  ProductTag> { typedef A     ret;};
+template <int ProductTag>             struct product_promote_storage_type<Dense,              Dense,              ProductTag> { typedef Dense ret;};
+template <typename A, int ProductTag> struct product_promote_storage_type<A,                  Dense,              ProductTag> { typedef Dense ret; };
+template <typename B, int ProductTag> struct product_promote_storage_type<Dense,              B,                  ProductTag> { typedef Dense ret; };
+
+template <typename A, int ProductTag> struct product_promote_storage_type<A,                  DiagonalShape,      ProductTag> { typedef A ret; };
+template <typename B, int ProductTag> struct product_promote_storage_type<DiagonalShape,      B,                  ProductTag> { typedef B ret; };
+template <int ProductTag>             struct product_promote_storage_type<Dense,              DiagonalShape,      ProductTag> { typedef Dense ret; };
+template <int ProductTag>             struct product_promote_storage_type<DiagonalShape,      Dense,              ProductTag> { typedef Dense ret; };
+
+template <typename A, int ProductTag> struct product_promote_storage_type<A,                  PermutationStorage, ProductTag> { typedef A ret; };
+template <typename B, int ProductTag> struct product_promote_storage_type<PermutationStorage, B,                  ProductTag> { typedef B ret; };
+template <int ProductTag>             struct product_promote_storage_type<Dense,              PermutationStorage, ProductTag> { typedef Dense ret; };
+template <int ProductTag>             struct product_promote_storage_type<PermutationStorage, Dense,              ProductTag> { typedef Dense ret; };
+
+/** \internal gives the plain matrix or array type to store a row/column/diagonal of a matrix type.
+  * \tparam Scalar optional parameter allowing to pass a different scalar type than the one of the MatrixType.
+  */
+template<typename ExpressionType, typename Scalar = typename ExpressionType::Scalar>
+struct plain_row_type
+{
+  typedef Matrix<Scalar, 1, ExpressionType::ColsAtCompileTime,
+                 ExpressionType::PlainObject::Options | RowMajor, 1, ExpressionType::MaxColsAtCompileTime> MatrixRowType;
+  typedef Array<Scalar, 1, ExpressionType::ColsAtCompileTime,
+                 ExpressionType::PlainObject::Options | RowMajor, 1, ExpressionType::MaxColsAtCompileTime> ArrayRowType;
+
+  typedef typename conditional<
+    is_same< typename traits<ExpressionType>::XprKind, MatrixXpr >::value,
+    MatrixRowType,
+    ArrayRowType 
+  >::type type;
+};
+
+template<typename ExpressionType, typename Scalar = typename ExpressionType::Scalar>
+struct plain_col_type
+{
+  typedef Matrix<Scalar, ExpressionType::RowsAtCompileTime, 1,
+                 ExpressionType::PlainObject::Options & ~RowMajor, ExpressionType::MaxRowsAtCompileTime, 1> MatrixColType;
+  typedef Array<Scalar, ExpressionType::RowsAtCompileTime, 1,
+                 ExpressionType::PlainObject::Options & ~RowMajor, ExpressionType::MaxRowsAtCompileTime, 1> ArrayColType;
+
+  typedef typename conditional<
+    is_same< typename traits<ExpressionType>::XprKind, MatrixXpr >::value,
+    MatrixColType,
+    ArrayColType 
+  >::type type;
+};
+
+template<typename ExpressionType, typename Scalar = typename ExpressionType::Scalar>
+struct plain_diag_type
+{
+  enum { diag_size = EIGEN_SIZE_MIN_PREFER_DYNAMIC(ExpressionType::RowsAtCompileTime, ExpressionType::ColsAtCompileTime),
+         max_diag_size = EIGEN_SIZE_MIN_PREFER_FIXED(ExpressionType::MaxRowsAtCompileTime, ExpressionType::MaxColsAtCompileTime)
+  };
+  typedef Matrix<Scalar, diag_size, 1, ExpressionType::PlainObject::Options & ~RowMajor, max_diag_size, 1> MatrixDiagType;
+  typedef Array<Scalar, diag_size, 1, ExpressionType::PlainObject::Options & ~RowMajor, max_diag_size, 1> ArrayDiagType;
+
+  typedef typename conditional<
+    is_same< typename traits<ExpressionType>::XprKind, MatrixXpr >::value,
+    MatrixDiagType,
+    ArrayDiagType 
+  >::type type;
+};
+
+template<typename Expr,typename Scalar = typename Expr::Scalar>
+struct plain_constant_type
+{
+  enum { Options = (traits<Expr>::Flags&RowMajorBit)?RowMajor:0 };
+
+  typedef Array<Scalar,  traits<Expr>::RowsAtCompileTime,   traits<Expr>::ColsAtCompileTime,
+                Options, traits<Expr>::MaxRowsAtCompileTime,traits<Expr>::MaxColsAtCompileTime> array_type;
+
+  typedef Matrix<Scalar,  traits<Expr>::RowsAtCompileTime,   traits<Expr>::ColsAtCompileTime,
+                 Options, traits<Expr>::MaxRowsAtCompileTime,traits<Expr>::MaxColsAtCompileTime> matrix_type;
+
+  typedef CwiseNullaryOp<scalar_constant_op<Scalar>, const typename conditional<is_same< typename traits<Expr>::XprKind, MatrixXpr >::value, matrix_type, array_type>::type > type;
+};
+
+template<typename ExpressionType>
+struct is_lvalue
+{
+  enum { value = !bool(is_const<ExpressionType>::value) &&
+                 bool(traits<ExpressionType>::Flags & LvalueBit) };
+};
+
+template<typename T> struct is_diagonal
+{ enum { ret = false }; };
+
+template<typename T> struct is_diagonal<DiagonalBase<T> >
+{ enum { ret = true }; };
+
+template<typename T> struct is_diagonal<DiagonalWrapper<T> >
+{ enum { ret = true }; };
+
+template<typename T, int S> struct is_diagonal<DiagonalMatrix<T,S> >
+{ enum { ret = true }; };
+
+template<typename S1, typename S2> struct glue_shapes;
+template<> struct glue_shapes<DenseShape,TriangularShape> { typedef TriangularShape type;  };
+
+template<typename T1, typename T2>
+bool is_same_dense(const T1 &mat1, const T2 &mat2, typename enable_if<has_direct_access<T1>::ret&&has_direct_access<T2>::ret, T1>::type * = 0)
+{
+  return (mat1.data()==mat2.data()) && (mat1.innerStride()==mat2.innerStride()) && (mat1.outerStride()==mat2.outerStride());
+}
+
+template<typename T1, typename T2>
+bool is_same_dense(const T1 &, const T2 &, typename enable_if<!(has_direct_access<T1>::ret&&has_direct_access<T2>::ret), T1>::type * = 0)
+{
+  return false;
+}
+
+#ifdef EIGEN_DEBUG_ASSIGN
+std::string demangle_traversal(int t)
+{
+  if(t==DefaultTraversal) return "DefaultTraversal";
+  if(t==LinearTraversal) return "LinearTraversal";
+  if(t==InnerVectorizedTraversal) return "Inne
