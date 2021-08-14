@@ -427,4 +427,214 @@ EigenSolver<MatrixType>::compute(const EigenBase<InputType>& matrix, bool comput
           z = maxval * sqrt(abs(p0 * p0 + t0 * t1));
         }
         
-        m_eivalues.coeffRef(i)   = Co
+        m_eivalues.coeffRef(i)   = ComplexScalar(m_matT.coeff(i+1, i+1) + p, z);
+        m_eivalues.coeffRef(i+1) = ComplexScalar(m_matT.coeff(i+1, i+1) + p, -z);
+        if(!((isfinite)(m_eivalues.coeffRef(i)) && (isfinite)(m_eivalues.coeffRef(i+1))))
+        {
+          m_isInitialized = true;
+          m_eigenvectorsOk = false;
+          m_info = NumericalIssue;
+          return *this;
+        }
+        i += 2;
+      }
+    }
+    
+    // Compute eigenvectors.
+    if (computeEigenvectors)
+      doComputeEigenvectors();
+  }
+
+  m_isInitialized = true;
+  m_eigenvectorsOk = computeEigenvectors;
+
+  return *this;
+}
+
+// Complex scalar division.
+template<typename Scalar>
+std::complex<Scalar> cdiv(const Scalar& xr, const Scalar& xi, const Scalar& yr, const Scalar& yi)
+{
+  using std::abs;
+  Scalar r,d;
+  if (abs(yr) > abs(yi))
+  {
+      r = yi/yr;
+      d = yr + r*yi;
+      return std::complex<Scalar>((xr + r*xi)/d, (xi - r*xr)/d);
+  }
+  else
+  {
+      r = yr/yi;
+      d = yi + r*yr;
+      return std::complex<Scalar>((r*xr + xi)/d, (r*xi - xr)/d);
+  }
+}
+
+
+template<typename MatrixType>
+void EigenSolver<MatrixType>::doComputeEigenvectors()
+{
+  using std::abs;
+  const Index size = m_eivec.cols();
+  const Scalar eps = NumTraits<Scalar>::epsilon();
+
+  // inefficient! this is already computed in RealSchur
+  Scalar norm(0);
+  for (Index j = 0; j < size; ++j)
+  {
+    norm += m_matT.row(j).segment((std::max)(j-1,Index(0)), size-(std::max)(j-1,Index(0))).cwiseAbs().sum();
+  }
+  
+  // Backsubstitute to find vectors of upper triangular form
+  if (norm == Scalar(0))
+  {
+    return;
+  }
+
+  for (Index n = size-1; n >= 0; n--)
+  {
+    Scalar p = m_eivalues.coeff(n).real();
+    Scalar q = m_eivalues.coeff(n).imag();
+
+    // Scalar vector
+    if (q == Scalar(0))
+    {
+      Scalar lastr(0), lastw(0);
+      Index l = n;
+
+      m_matT.coeffRef(n,n) = Scalar(1);
+      for (Index i = n-1; i >= 0; i--)
+      {
+        Scalar w = m_matT.coeff(i,i) - p;
+        Scalar r = m_matT.row(i).segment(l,n-l+1).dot(m_matT.col(n).segment(l, n-l+1));
+
+        if (m_eivalues.coeff(i).imag() < Scalar(0))
+        {
+          lastw = w;
+          lastr = r;
+        }
+        else
+        {
+          l = i;
+          if (m_eivalues.coeff(i).imag() == Scalar(0))
+          {
+            if (w != Scalar(0))
+              m_matT.coeffRef(i,n) = -r / w;
+            else
+              m_matT.coeffRef(i,n) = -r / (eps * norm);
+          }
+          else // Solve real equations
+          {
+            Scalar x = m_matT.coeff(i,i+1);
+            Scalar y = m_matT.coeff(i+1,i);
+            Scalar denom = (m_eivalues.coeff(i).real() - p) * (m_eivalues.coeff(i).real() - p) + m_eivalues.coeff(i).imag() * m_eivalues.coeff(i).imag();
+            Scalar t = (x * lastr - lastw * r) / denom;
+            m_matT.coeffRef(i,n) = t;
+            if (abs(x) > abs(lastw))
+              m_matT.coeffRef(i+1,n) = (-r - w * t) / x;
+            else
+              m_matT.coeffRef(i+1,n) = (-lastr - y * t) / lastw;
+          }
+
+          // Overflow control
+          Scalar t = abs(m_matT.coeff(i,n));
+          if ((eps * t) * t > Scalar(1))
+            m_matT.col(n).tail(size-i) /= t;
+        }
+      }
+    }
+    else if (q < Scalar(0) && n > 0) // Complex vector
+    {
+      Scalar lastra(0), lastsa(0), lastw(0);
+      Index l = n-1;
+
+      // Last vector component imaginary so matrix is triangular
+      if (abs(m_matT.coeff(n,n-1)) > abs(m_matT.coeff(n-1,n)))
+      {
+        m_matT.coeffRef(n-1,n-1) = q / m_matT.coeff(n,n-1);
+        m_matT.coeffRef(n-1,n) = -(m_matT.coeff(n,n) - p) / m_matT.coeff(n,n-1);
+      }
+      else
+      {
+        std::complex<Scalar> cc = cdiv<Scalar>(Scalar(0),-m_matT.coeff(n-1,n),m_matT.coeff(n-1,n-1)-p,q);
+        m_matT.coeffRef(n-1,n-1) = numext::real(cc);
+        m_matT.coeffRef(n-1,n) = numext::imag(cc);
+      }
+      m_matT.coeffRef(n,n-1) = Scalar(0);
+      m_matT.coeffRef(n,n) = Scalar(1);
+      for (Index i = n-2; i >= 0; i--)
+      {
+        Scalar ra = m_matT.row(i).segment(l, n-l+1).dot(m_matT.col(n-1).segment(l, n-l+1));
+        Scalar sa = m_matT.row(i).segment(l, n-l+1).dot(m_matT.col(n).segment(l, n-l+1));
+        Scalar w = m_matT.coeff(i,i) - p;
+
+        if (m_eivalues.coeff(i).imag() < Scalar(0))
+        {
+          lastw = w;
+          lastra = ra;
+          lastsa = sa;
+        }
+        else
+        {
+          l = i;
+          if (m_eivalues.coeff(i).imag() == RealScalar(0))
+          {
+            std::complex<Scalar> cc = cdiv(-ra,-sa,w,q);
+            m_matT.coeffRef(i,n-1) = numext::real(cc);
+            m_matT.coeffRef(i,n) = numext::imag(cc);
+          }
+          else
+          {
+            // Solve complex equations
+            Scalar x = m_matT.coeff(i,i+1);
+            Scalar y = m_matT.coeff(i+1,i);
+            Scalar vr = (m_eivalues.coeff(i).real() - p) * (m_eivalues.coeff(i).real() - p) + m_eivalues.coeff(i).imag() * m_eivalues.coeff(i).imag() - q * q;
+            Scalar vi = (m_eivalues.coeff(i).real() - p) * Scalar(2) * q;
+            if ((vr == Scalar(0)) && (vi == Scalar(0)))
+              vr = eps * norm * (abs(w) + abs(q) + abs(x) + abs(y) + abs(lastw));
+
+            std::complex<Scalar> cc = cdiv(x*lastra-lastw*ra+q*sa,x*lastsa-lastw*sa-q*ra,vr,vi);
+            m_matT.coeffRef(i,n-1) = numext::real(cc);
+            m_matT.coeffRef(i,n) = numext::imag(cc);
+            if (abs(x) > (abs(lastw) + abs(q)))
+            {
+              m_matT.coeffRef(i+1,n-1) = (-ra - w * m_matT.coeff(i,n-1) + q * m_matT.coeff(i,n)) / x;
+              m_matT.coeffRef(i+1,n) = (-sa - w * m_matT.coeff(i,n) - q * m_matT.coeff(i,n-1)) / x;
+            }
+            else
+            {
+              cc = cdiv(-lastra-y*m_matT.coeff(i,n-1),-lastsa-y*m_matT.coeff(i,n),lastw,q);
+              m_matT.coeffRef(i+1,n-1) = numext::real(cc);
+              m_matT.coeffRef(i+1,n) = numext::imag(cc);
+            }
+          }
+
+          // Overflow control
+          Scalar t = numext::maxi<Scalar>(abs(m_matT.coeff(i,n-1)),abs(m_matT.coeff(i,n)));
+          if ((eps * t) * t > Scalar(1))
+            m_matT.block(i, n-1, size-i, 2) /= t;
+
+        }
+      }
+      
+      // We handled a pair of complex conjugate eigenvalues, so need to skip them both
+      n--;
+    }
+    else
+    {
+      eigen_assert(0 && "Internal bug in EigenSolver (INF or NaN has not been detected)"); // this should not happen
+    }
+  }
+
+  // Back transformation to get eigenvectors of original matrix
+  for (Index j = size-1; j >= 0; j--)
+  {
+    m_tmp.noalias() = m_eivec.leftCols(j+1) * m_matT.col(j).segment(0, j+1);
+    m_eivec.col(j) = m_tmp;
+  }
+}
+
+} // end namespace Eigen
+
+#endif // EIGEN_EIGENSOLVER_H
