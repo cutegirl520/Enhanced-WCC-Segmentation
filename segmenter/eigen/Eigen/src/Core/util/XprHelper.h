@@ -679,4 +679,43 @@ std::string demangle_traversal(int t)
 {
   if(t==DefaultTraversal) return "DefaultTraversal";
   if(t==LinearTraversal) return "LinearTraversal";
-  if(t==InnerVectorizedTraversal) return "Inne
+  if(t==InnerVectorizedTraversal) return "InnerVectorizedTraversal";
+  if(t==LinearVectorizedTraversal) return "LinearVectorizedTraversal";
+  if(t==SliceVectorizedTraversal) return "SliceVectorizedTraversal";
+  return "?";
+}
+std::string demangle_unrolling(int t)
+{
+  if(t==NoUnrolling) return "NoUnrolling";
+  if(t==InnerUnrolling) return "InnerUnrolling";
+  if(t==CompleteUnrolling) return "CompleteUnrolling";
+  return "?";
+}
+std::string demangle_flags(int f)
+{
+  std::string res;
+  if(f&RowMajorBit)                 res += " | RowMajor";
+  if(f&PacketAccessBit)             res += " | Packet";
+  if(f&LinearAccessBit)             res += " | Linear";
+  if(f&LvalueBit)                   res += " | Lvalue";
+  if(f&DirectAccessBit)             res += " | Direct";
+  if(f&NestByRefBit)                res += " | NestByRef";
+  if(f&NoPreferredStorageOrderBit)  res += " | NoPreferredStorageOrderBit";
+  
+  return res;
+}
+#endif
+
+} // end namespace internal
+
+// We require Lhs and Rhs to have "compatible" scalar types.
+// It is tempting to always allow mixing different types but remember that this is often impossible in the vectorized paths.
+// So allowing mixing different types gives very unexpected errors when enabling vectorization, when the user tries to
+// add together a float matrix and a double matrix.
+#define EIGEN_CHECK_BINARY_COMPATIBILIY(BINOP,LHS,RHS) \
+  EIGEN_STATIC_ASSERT(int(ScalarBinaryOpTraits<LHS, RHS,BINOP>::Defined), \
+    YOU_MIXED_DIFFERENT_NUMERIC_TYPES__YOU_NEED_TO_USE_THE_CAST_METHOD_OF_MATRIXBASE_TO_CAST_NUMERIC_TYPES_EXPLICITLY)
+    
+} // end namespace Eigen
+
+#endif // EIGEN_XPRHELPER_H
