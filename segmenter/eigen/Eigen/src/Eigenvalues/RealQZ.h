@@ -421,4 +421,234 @@ namespace Eigen {
                lpl = Scalar(1.5)*ss,
                ll = ss*ss;
         x = ll + a11*a11*b11i*b11i - lpl*a11*b11i + a12*a21*b11i*b22i
-    
+          - a11*a21*b12*b11i*b11i*b22i;
+        y = a11*a21*b11i*b11i - lpl*a21*b11i + a21*a22*b11i*b22i 
+          - a21*a21*b12*b11i*b11i*b22i;
+        z = a21*a32*b11i*b22i;
+      }
+      else if (iter==16)
+      {
+        // another exceptional shift
+        x = m_S.coeff(f,f)/m_T.coeff(f,f)-m_S.coeff(l,l)/m_T.coeff(l,l) + m_S.coeff(l,l-1)*m_T.coeff(l-1,l) /
+          (m_T.coeff(l-1,l-1)*m_T.coeff(l,l));
+        y = m_S.coeff(f+1,f)/m_T.coeff(f,f);
+        z = 0;
+      }
+      else if (iter>23 && !(iter%8))
+      {
+        // extremely exceptional shift
+        x = internal::random<Scalar>(-1.0,1.0);
+        y = internal::random<Scalar>(-1.0,1.0);
+        z = internal::random<Scalar>(-1.0,1.0);
+      }
+      else
+      {
+        // Compute the shifts: (x,y,z,0...) = (AB^-1 - l1 I) (AB^-1 - l2 I) e1
+        // where l1 and l2 are the eigenvalues of the 2x2 matrix C = U V^-1 where
+        // U and V are 2x2 bottom right sub matrices of A and B. Thus:
+        //  = AB^-1AB^-1 + l1 l2 I - (l1+l2)(AB^-1)
+        //  = AB^-1AB^-1 + det(M) - tr(M)(AB^-1)
+        // Since we are only interested in having x, y, z with a correct ratio, we have:
+        const Scalar
+          a11 = m_S.coeff(f,f),     a12 = m_S.coeff(f,f+1),
+          a21 = m_S.coeff(f+1,f),   a22 = m_S.coeff(f+1,f+1),
+                                    a32 = m_S.coeff(f+2,f+1),
+
+          a88 = m_S.coeff(l-1,l-1), a89 = m_S.coeff(l-1,l),
+          a98 = m_S.coeff(l,l-1),   a99 = m_S.coeff(l,l),
+
+          b11 = m_T.coeff(f,f),     b12 = m_T.coeff(f,f+1),
+                                    b22 = m_T.coeff(f+1,f+1),
+
+          b88 = m_T.coeff(l-1,l-1), b89 = m_T.coeff(l-1,l),
+                                    b99 = m_T.coeff(l,l);
+
+        x = ( (a88/b88 - a11/b11)*(a99/b99 - a11/b11) - (a89/b99)*(a98/b88) + (a98/b88)*(b89/b99)*(a11/b11) ) * (b11/a21)
+          + a12/b22 - (a11/b11)*(b12/b22);
+        y = (a22/b22-a11/b11) - (a21/b11)*(b12/b22) - (a88/b88-a11/b11) - (a99/b99-a11/b11) + (a98/b88)*(b89/b99);
+        z = a32/b22;
+      }
+
+      JRs G;
+
+      for (Index k=f; k<=l-2; k++)
+      {
+        // variables for Householder reflections
+        Vector2s essential2;
+        Scalar tau, beta;
+
+        Vector3s hr(x,y,z);
+
+        // Q_k to annihilate S(k+1,k-1) and S(k+2,k-1)
+        hr.makeHouseholderInPlace(tau, beta);
+        essential2 = hr.template bottomRows<2>();
+        Index fc=(std::max)(k-1,Index(0));  // first col to update
+        m_S.template middleRows<3>(k).rightCols(dim-fc).applyHouseholderOnTheLeft(essential2, tau, m_workspace.data());
+        m_T.template middleRows<3>(k).rightCols(dim-fc).applyHouseholderOnTheLeft(essential2, tau, m_workspace.data());
+        if (m_computeQZ)
+          m_Q.template middleCols<3>(k).applyHouseholderOnTheRight(essential2, tau, m_workspace.data());
+        if (k>f)
+          m_S.coeffRef(k+2,k-1) = m_S.coeffRef(k+1,k-1) = Scalar(0.0);
+
+        // Z_{k1} to annihilate T(k+2,k+1) and T(k+2,k)
+        hr << m_T.coeff(k+2,k+2),m_T.coeff(k+2,k),m_T.coeff(k+2,k+1);
+        hr.makeHouseholderInPlace(tau, beta);
+        essential2 = hr.template bottomRows<2>();
+        {
+          Index lr = (std::min)(k+4,dim); // last row to update
+          Map<Matrix<Scalar,Dynamic,1> > tmp(m_workspace.data(),lr);
+          // S
+          tmp = m_S.template middleCols<2>(k).topRows(lr) * essential2;
+          tmp += m_S.col(k+2).head(lr);
+          m_S.col(k+2).head(lr) -= tau*tmp;
+          m_S.template middleCols<2>(k).topRows(lr) -= (tau*tmp) * essential2.adjoint();
+          // T
+          tmp = m_T.template middleCols<2>(k).topRows(lr) * essential2;
+          tmp += m_T.col(k+2).head(lr);
+          m_T.col(k+2).head(lr) -= tau*tmp;
+          m_T.template middleCols<2>(k).topRows(lr) -= (tau*tmp) * essential2.adjoint();
+        }
+        if (m_computeQZ)
+        {
+          // Z
+          Map<Matrix<Scalar,1,Dynamic> > tmp(m_workspace.data(),dim);
+          tmp = essential2.adjoint()*(m_Z.template middleRows<2>(k));
+          tmp += m_Z.row(k+2);
+          m_Z.row(k+2) -= tau*tmp;
+          m_Z.template middleRows<2>(k) -= essential2 * (tau*tmp);
+        }
+        m_T.coeffRef(k+2,k) = m_T.coeffRef(k+2,k+1) = Scalar(0.0);
+
+        // Z_{k2} to annihilate T(k+1,k)
+        G.makeGivens(m_T.coeff(k+1,k+1), m_T.coeff(k+1,k));
+        m_S.applyOnTheRight(k+1,k,G);
+        m_T.applyOnTheRight(k+1,k,G);
+        // update Z
+        if (m_computeQZ)
+          m_Z.applyOnTheLeft(k+1,k,G.adjoint());
+        m_T.coeffRef(k+1,k) = Scalar(0.0);
+
+        // update x,y,z
+        x = m_S.coeff(k+1,k);
+        y = m_S.coeff(k+2,k);
+        if (k < l-2)
+          z = m_S.coeff(k+3,k);
+      } // loop over k
+
+      // Q_{n-1} to annihilate y = S(l,l-2)
+      G.makeGivens(x,y);
+      m_S.applyOnTheLeft(l-1,l,G.adjoint());
+      m_T.applyOnTheLeft(l-1,l,G.adjoint());
+      if (m_computeQZ)
+        m_Q.applyOnTheRight(l-1,l,G);
+      m_S.coeffRef(l,l-2) = Scalar(0.0);
+
+      // Z_{n-1} to annihilate T(l,l-1)
+      G.makeGivens(m_T.coeff(l,l),m_T.coeff(l,l-1));
+      m_S.applyOnTheRight(l,l-1,G);
+      m_T.applyOnTheRight(l,l-1,G);
+      if (m_computeQZ)
+        m_Z.applyOnTheLeft(l,l-1,G.adjoint());
+      m_T.coeffRef(l,l-1) = Scalar(0.0);
+    }
+
+  template<typename MatrixType>
+    RealQZ<MatrixType>& RealQZ<MatrixType>::compute(const MatrixType& A_in, const MatrixType& B_in, bool computeQZ)
+    {
+
+      const Index dim = A_in.cols();
+
+      eigen_assert (A_in.rows()==dim && A_in.cols()==dim 
+          && B_in.rows()==dim && B_in.cols()==dim 
+          && "Need square matrices of the same dimension");
+
+      m_isInitialized = true;
+      m_computeQZ = computeQZ;
+      m_S = A_in; m_T = B_in;
+      m_workspace.resize(dim*2);
+      m_global_iter = 0;
+
+      // entrance point: hessenberg triangular decomposition
+      hessenbergTriangular();
+      // compute L1 vector norms of T, S into m_normOfS, m_normOfT
+      computeNorms();
+
+      Index l = dim-1, 
+            f, 
+            local_iter = 0;
+
+      while (l>0 && local_iter<m_maxIters)
+      {
+        f = findSmallSubdiagEntry(l);
+        // now rows and columns f..l (including) decouple from the rest of the problem
+        if (f>0) m_S.coeffRef(f,f-1) = Scalar(0.0);
+        if (f == l) // One root found
+        {
+          l--;
+          local_iter = 0;
+        }
+        else if (f == l-1) // Two roots found
+        {
+          splitOffTwoRows(f);
+          l -= 2;
+          local_iter = 0;
+        }
+        else // No convergence yet
+        {
+          // if there's zero on diagonal of T, we can isolate an eigenvalue with Givens rotations
+          Index z = findSmallDiagEntry(f,l);
+          if (z>=f)
+          {
+            // zero found
+            pushDownZero(z,f,l);
+          }
+          else
+          {
+            // We are sure now that S.block(f,f, l-f+1,l-f+1) is underuced upper-Hessenberg 
+            // and T.block(f,f, l-f+1,l-f+1) is invertible uper-triangular, which allows to
+            // apply a QR-like iteration to rows and columns f..l.
+            step(f,l, local_iter);
+            local_iter++;
+            m_global_iter++;
+          }
+        }
+      }
+      // check if we converged before reaching iterations limit
+      m_info = (local_iter<m_maxIters) ? Success : NoConvergence;
+
+      // For each non triangular 2x2 diagonal block of S,
+      //    reduce the respective 2x2 diagonal block of T to positive diagonal form using 2x2 SVD.
+      // This step is not mandatory for QZ, but it does help further extraction of eigenvalues/eigenvectors,
+      // and is in par with Lapack/Matlab QZ.
+      if(m_info==Success)
+      {
+        for(Index i=0; i<dim-1; ++i)
+        {
+          if(m_S.coeff(i+1, i) != Scalar(0))
+          {
+            JacobiRotation<Scalar> j_left, j_right;
+            internal::real_2x2_jacobi_svd(m_T, i, i+1, &j_left, &j_right);
+
+            // Apply resulting Jacobi rotations
+            m_S.applyOnTheLeft(i,i+1,j_left);
+            m_S.applyOnTheRight(i,i+1,j_right);
+            m_T.applyOnTheLeft(i,i+1,j_left);
+            m_T.applyOnTheRight(i,i+1,j_right);
+            m_T(i+1,i) = m_T(i,i+1) = Scalar(0);
+
+            if(m_computeQZ) {
+              m_Q.applyOnTheRight(i,i+1,j_left.transpose());
+              m_Z.applyOnTheLeft(i,i+1,j_right.transpose());
+            }
+
+            i++;
+          }
+        }
+      }
+
+      return *this;
+    } // end compute
+
+} // end namespace Eigen
+
+#endif //EIGEN_REAL_QZ
