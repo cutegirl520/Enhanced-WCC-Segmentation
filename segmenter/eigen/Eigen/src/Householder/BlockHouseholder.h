@@ -90,4 +90,13 @@ void apply_block_householder_on_the_left(MatrixType& mat, const VectorsType& vec
   Matrix<typename MatrixType::Scalar,VectorsType::ColsAtCompileTime,MatrixType::ColsAtCompileTime,0,
          VectorsType::MaxColsAtCompileTime,MatrixType::MaxColsAtCompileTime> tmp = V.adjoint() * mat;
   // FIXME add .noalias() once the triangular product can work inplace
-  if(forward) tmp = T.
+  if(forward) tmp = T.template triangularView<Upper>()           * tmp;
+  else        tmp = T.template triangularView<Upper>().adjoint() * tmp;
+  mat.noalias() -= V * tmp;
+}
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_BLOCK_HOUSEHOLDER_H
