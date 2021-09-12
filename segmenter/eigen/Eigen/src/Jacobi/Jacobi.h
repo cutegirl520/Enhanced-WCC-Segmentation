@@ -404,3 +404,30 @@ void /*EIGEN_DONT_INLINE*/ apply_rotation_in_the_plane(DenseBase<VectorX>& xpr_x
     {
       Packet xi = pload<Packet>(px);
       Packet yi = pload<Packet>(py);
+      pstore(px, padd(pmul(pc,xi),pcj.pmul(ps,yi)));
+      pstore(py, psub(pcj.pmul(pc,yi),pmul(ps,xi)));
+      px += PacketSize;
+      py += PacketSize;
+    }
+  }
+
+  /*** non-vectorized path ***/
+  else
+  {
+    for(Index i=0; i<size; ++i)
+    {
+      Scalar xi = *x;
+      Scalar yi = *y;
+      *x =  c * xi + numext::conj(s) * yi;
+      *y = -s * xi + numext::conj(c) * yi;
+      x += incrx;
+      y += incry;
+    }
+  }
+}
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_JACOBI_H
