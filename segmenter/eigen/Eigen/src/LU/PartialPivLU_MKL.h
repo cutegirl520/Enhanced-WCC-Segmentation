@@ -54,3 +54,33 @@ struct partial_lu_impl<EIGTYPE, StorageOrder, lapack_int> \
     lapack_int m, n, lda, *ipiv, info; \
     EIGTYPE* a; \
 /* Set up parameters for ?getrf */ \
+    matrix_order = StorageOrder==RowMajor ? LAPACK_ROW_MAJOR : LAPACK_COL_MAJOR; \
+    lda = convert_index<lapack_int>(luStride); \
+    a = lu_data; \
+    ipiv = row_transpositions; \
+    m = convert_index<lapack_int>(rows); \
+    n = convert_index<lapack_int>(cols); \
+    nb_transpositions = 0; \
+\
+    info = LAPACKE_##MKLPREFIX##getrf( matrix_order, m, n, (MKLTYPE*)a, lda, ipiv ); \
+\
+    for(int i=0;i<m;i++) { ipiv[i]--; if (ipiv[i]!=i) nb_transpositions++; } \
+\
+    eigen_assert(info >= 0); \
+/* something should be done with nb_transpositions */ \
+\
+    first_zero_pivot = info; \
+    return first_zero_pivot; \
+  } \
+};
+
+EIGEN_MKL_LU_PARTPIV(double, double, d)
+EIGEN_MKL_LU_PARTPIV(float, float, s)
+EIGEN_MKL_LU_PARTPIV(dcomplex, MKL_Complex16, z)
+EIGEN_MKL_LU_PARTPIV(scomplex, MKL_Complex8, c)
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_PARTIALLU_LAPACK_H
