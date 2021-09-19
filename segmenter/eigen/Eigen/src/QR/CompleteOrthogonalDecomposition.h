@@ -516,4 +516,48 @@ void CompleteOrthogonalDecomposition<_MatrixType>::_solve_impl(
     // Compute y = Z^* * [ z ]
     //                   [ 0 ]
     dst.bottomRows(cols - rank).setZero();
-    applyZAdjointOn
+    applyZAdjointOnTheLeftInPlace(dst);
+  }
+
+  // Undo permutation to get x = P^{-1} * y.
+  dst = colsPermutation() * dst;
+}
+#endif
+
+namespace internal {
+
+template<typename DstXprType, typename MatrixType, typename Scalar>
+struct Assignment<DstXprType, Inverse<CompleteOrthogonalDecomposition<MatrixType> >, internal::assign_op<Scalar,Scalar>, Dense2Dense>
+{
+  typedef CompleteOrthogonalDecomposition<MatrixType> CodType;
+  typedef Inverse<CodType> SrcXprType;
+  static void run(DstXprType &dst, const SrcXprType &src, const internal::assign_op<Scalar,Scalar> &)
+  {
+    dst = src.nestedExpression().solve(MatrixType::Identity(src.rows(), src.rows()));
+  }
+};
+
+} // end namespace internal
+
+/** \returns the matrix Q as a sequence of householder transformations */
+template <typename MatrixType>
+typename CompleteOrthogonalDecomposition<MatrixType>::HouseholderSequenceType
+CompleteOrthogonalDecomposition<MatrixType>::householderQ() const {
+  return m_cpqr.householderQ();
+}
+
+#ifndef __CUDACC__
+/** \return the complete orthogonal decomposition of \c *this.
+  *
+  * \sa class CompleteOrthogonalDecomposition
+  */
+template <typename Derived>
+const CompleteOrthogonalDecomposition<typename MatrixBase<Derived>::PlainObject>
+MatrixBase<Derived>::completeOrthogonalDecomposition() const {
+  return CompleteOrthogonalDecomposition<PlainObject>(eval());
+}
+#endif  // __CUDACC__
+
+}  // end namespace Eigen
+
+#endif  // EIGEN_COMPLETEORTHOGONALDECOMPOSITION_H
