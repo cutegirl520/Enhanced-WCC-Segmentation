@@ -724,4 +724,308 @@ void BDCSVD<MatrixType>::computeSingVals(const ArrayRef& col0, const ArrayRef& d
       continue;
     } 
 
-    // otherwise, use se
+    // otherwise, use secular equation to find singular value
+    RealScalar left = diag(k);
+    RealScalar right; // was: = (k != actual_n-1) ? diag(k+1) : (diag(actual_n-1) + col0.matrix().norm());
+    if(k==actual_n-1)
+      right = (diag(actual_n-1) + col0.matrix().norm());
+    else
+    {
+      // Skip deflated singular values
+      Index l = k+1;
+      while(col0(l)==0) { ++l; eigen_internal_assert(l<actual_n); }
+      right = diag(l);
+    }
+
+    // first decide whether it's closer to the left end or the right end
+    RealScalar mid = left + (right-left) / 2;
+    RealScalar fMid = secularEq(mid, col0, diag, perm, diag, 0);
+#ifdef EIGEN_BDCSVD_DEBUG_VERBOSE
+    std::cout << right-left << "\n";
+    std::cout << "fMid = " << fMid << " " << secularEq(mid-left, col0, diag, perm, diag-left, left) << " " << secularEq(mid-right, col0, diag, perm, diag-right, right)   << "\n";
+    std::cout << "     = " << secularEq(0.1*(left+right), col0, diag, perm, diag, 0)
+              << " "       << secularEq(0.2*(left+right), col0, diag, perm, diag, 0)
+              << " "       << secularEq(0.3*(left+right), col0, diag, perm, diag, 0)
+              << " "       << secularEq(0.4*(left+right), col0, diag, perm, diag, 0)
+              << " "       << secularEq(0.49*(left+right), col0, diag, perm, diag, 0)
+              << " "       << secularEq(0.5*(left+right), col0, diag, perm, diag, 0)
+              << " "       << secularEq(0.51*(left+right), col0, diag, perm, diag, 0)
+              << " "       << secularEq(0.6*(left+right), col0, diag, perm, diag, 0)
+              << " "       << secularEq(0.7*(left+right), col0, diag, perm, diag, 0)
+              << " "       << secularEq(0.8*(left+right), col0, diag, perm, diag, 0)
+              << " "       << secularEq(0.9*(left+right), col0, diag, perm, diag, 0) << "\n";
+#endif
+    RealScalar shift = (k == actual_n-1 || fMid > 0) ? left : right;
+    
+    // measure everything relative to shift
+    Map<ArrayXr> diagShifted(m_workspace.data()+4*n, n);
+    diagShifted = diag - shift;
+    
+    // initial guess
+    RealScalar muPrev, muCur;
+    if (shift == left)
+    {
+      muPrev = (right - left) * RealScalar(0.1);
+      if (k == actual_n-1) muCur = right - left;
+      else                 muCur = (right - left) * RealScalar(0.5);
+    }
+    else
+    {
+      muPrev = -(right - left) * RealScalar(0.1);
+      muCur = -(right - left) * RealScalar(0.5);
+    }
+
+    RealScalar fPrev = secularEq(muPrev, col0, diag, perm, diagShifted, shift);
+    RealScalar fCur = secularEq(muCur, col0, diag, perm, diagShifted, shift);
+    if (abs(fPrev) < abs(fCur))
+    {
+      swap(fPrev, fCur);
+      swap(muPrev, muCur);
+    }
+
+    // rational interpolation: fit a function of the form a / mu + b through the two previous
+    // iterates and use its zero to compute the next iterate
+    bool useBisection = fPrev*fCur>0;
+    while (fCur!=0 && abs(muCur - muPrev) > 8 * NumTraits<RealScalar>::epsilon() * numext::maxi<RealScalar>(abs(muCur), abs(muPrev)) && abs(fCur - fPrev)>NumTraits<RealScalar>::epsilon() && !useBisection)
+    {
+      ++m_numIters;
+
+      // Find a and b such that the function f(mu) = a / mu + b matches the current and previous samples.
+      RealScalar a = (fCur - fPrev) / (1/muCur - 1/muPrev);
+      RealScalar b = fCur - a / muCur;
+      // And find mu such that f(mu)==0:
+      RealScalar muZero = -a/b;
+      RealScalar fZero = secularEq(muZero, col0, diag, perm, diagShifted, shift);
+      
+      muPrev = muCur;
+      fPrev = fCur;
+      muCur = muZero;
+      fCur = fZero;
+      
+      
+      if (shift == left  && (muCur < 0 || muCur > right - left)) useBisection = true;
+      if (shift == right && (muCur < -(right - left) || muCur > 0)) useBisection = true;
+      if (abs(fCur)>abs(fPrev)) useBisection = true;
+    }
+
+    // fall back on bisection method if rational interpolation did not work
+    if (useBisection)
+    {
+#ifdef  EIGEN_BDCSVD_DEBUG_VERBOSE
+      std::cout << "useBisection for k = " << k << ", actual_n = " << actual_n << "\n";
+#endif
+      RealScalar leftShifted, rightShifted;
+      if (shift == left)
+      {
+        leftShifted = (std::numeric_limits<RealScalar>::min)();
+        // I don't understand why the case k==0 would be special there:
+        // if (k == 0) rightShifted = right - left; else 
+        rightShifted = (k==actual_n-1) ? right : ((right - left) * RealScalar(0.6)); // theoretically we can take 0.5, but let's be safe
+      }
+      else
+      {
+        leftShifted = -(right - left) * RealScalar(0.6);
+        rightShifted = -(std::numeric_limits<RealScalar>::min)();
+      }
+      
+      RealScalar fLeft = secularEq(leftShifted, col0, diag, perm, diagShifted, shift);
+
+#if defined EIGEN_INTERNAL_DEBUGGING || defined EIGEN_BDCSVD_DEBUG_VERBOSE
+      RealScalar fRight = secularEq(rightShifted, col0, diag, perm, diagShifted, shift);
+#endif
+
+#ifdef  EIGEN_BDCSVD_DEBUG_VERBOSE
+      if(!(fLeft * fRight<0))
+      {
+        std::cout << "fLeft: " << leftShifted << " - " << diagShifted.head(10).transpose()  << "\n ; " << bool(left==shift) << " " << (left-shift) << "\n";
+        std::cout << k << " : " <<  fLeft << " * " << fRight << " == " << fLeft * fRight << "  ;  " << left << " - " << right << " -> " <<  leftShifted << " " << rightShifted << "   shift=" << shift << "\n";
+      }
+#endif
+      eigen_internal_assert(fLeft * fRight < 0);
+      
+      while (rightShifted - leftShifted > 2 * NumTraits<RealScalar>::epsilon() * numext::maxi<RealScalar>(abs(leftShifted), abs(rightShifted)))
+      {
+        RealScalar midShifted = (leftShifted + rightShifted) / 2;
+        fMid = secularEq(midShifted, col0, diag, perm, diagShifted, shift);
+        if (fLeft * fMid < 0)
+        {
+          rightShifted = midShifted;
+        }
+        else
+        {
+          leftShifted = midShifted;
+          fLeft = fMid;
+        }
+      }
+
+      muCur = (leftShifted + rightShifted) / 2;
+    }
+      
+    singVals[k] = shift + muCur;
+    shifts[k] = shift;
+    mus[k] = muCur;
+
+    // perturb singular value slightly if it equals diagonal entry to avoid division by zero later
+    // (deflation is supposed to avoid this from happening)
+    // - this does no seem to be necessary anymore -
+//     if (singVals[k] == left) singVals[k] *= 1 + NumTraits<RealScalar>::epsilon();
+//     if (singVals[k] == right) singVals[k] *= 1 - NumTraits<RealScalar>::epsilon();
+  }
+}
+
+
+// zhat is perturbation of col0 for which singular vectors can be computed stably (see Section 3.1)
+template <typename MatrixType>
+void BDCSVD<MatrixType>::perturbCol0
+   (const ArrayRef& col0, const ArrayRef& diag, const IndicesRef &perm, const VectorType& singVals,
+    const ArrayRef& shifts, const ArrayRef& mus, ArrayRef zhat)
+{
+  using std::sqrt;
+  Index n = col0.size();
+  Index m = perm.size();
+  if(m==0)
+  {
+    zhat.setZero();
+    return;
+  }
+  Index last = perm(m-1);
+  // The offset permits to skip deflated entries while computing zhat
+  for (Index k = 0; k < n; ++k)
+  {
+    if (col0(k) == 0) // deflated
+      zhat(k) = 0;
+    else
+    {
+      // see equation (3.6)
+      RealScalar dk = diag(k);
+      RealScalar prod = (singVals(last) + dk) * (mus(last) + (shifts(last) - dk));
+
+      for(Index l = 0; l<m; ++l)
+      {
+        Index i = perm(l);
+        if(i!=k)
+        {
+          Index j = i<k ? i : perm(l-1);
+          prod *= ((singVals(j)+dk) / ((diag(i)+dk))) * ((mus(j)+(shifts(j)-dk)) / ((diag(i)-dk)));
+#ifdef EIGEN_BDCSVD_DEBUG_VERBOSE
+          if(i!=k && std::abs(((singVals(j)+dk)*(mus(j)+(shifts(j)-dk)))/((diag(i)+dk)*(diag(i)-dk)) - 1) > 0.9 )
+            std::cout << "     " << ((singVals(j)+dk)*(mus(j)+(shifts(j)-dk)))/((diag(i)+dk)*(diag(i)-dk)) << " == (" << (singVals(j)+dk) << " * " << (mus(j)+(shifts(j)-dk))
+                       << ") / (" << (diag(i)+dk) << " * " << (diag(i)-dk) << ")\n";
+#endif
+        }
+      }
+#ifdef EIGEN_BDCSVD_DEBUG_VERBOSE
+      std::cout << "zhat(" << k << ") =  sqrt( " << prod << ")  ;  " << (singVals(last) + dk) << " * " << mus(last) + shifts(last) << " - " << dk << "\n";
+#endif
+      RealScalar tmp = sqrt(prod);
+      zhat(k) = col0(k) > 0 ? tmp : -tmp;
+    }
+  }
+}
+
+// compute singular vectors
+template <typename MatrixType>
+void BDCSVD<MatrixType>::computeSingVecs
+   (const ArrayRef& zhat, const ArrayRef& diag, const IndicesRef &perm, const VectorType& singVals,
+    const ArrayRef& shifts, const ArrayRef& mus, MatrixXr& U, MatrixXr& V)
+{
+  Index n = zhat.size();
+  Index m = perm.size();
+  
+  for (Index k = 0; k < n; ++k)
+  {
+    if (zhat(k) == 0)
+    {
+      U.col(k) = VectorType::Unit(n+1, k);
+      if (m_compV) V.col(k) = VectorType::Unit(n, k);
+    }
+    else
+    {
+      U.col(k).setZero();
+      for(Index l=0;l<m;++l)
+      {
+        Index i = perm(l);
+        U(i,k) = zhat(i)/(((diag(i) - shifts(k)) - mus(k)) )/( (diag(i) + singVals[k]));
+      }
+      U(n,k) = 0;      
+      U.col(k).normalize();
+    
+      if (m_compV)
+      {
+        V.col(k).setZero();
+        for(Index l=1;l<m;++l)
+        {
+          Index i = perm(l);
+          V(i,k) = diag(i) * zhat(i) / (((diag(i) - shifts(k)) - mus(k)) )/( (diag(i) + singVals[k]));
+        }
+        V(0,k) = -1;
+        V.col(k).normalize();
+      }
+    }
+  }
+  U.col(n) = VectorType::Unit(n+1, n);
+}
+
+
+// page 12_13
+// i >= 1, di almost null and zi non null.
+// We use a rotation to zero out zi applied to the left of M
+template <typename MatrixType>
+void BDCSVD<MatrixType>::deflation43(Index firstCol, Index shift, Index i, Index size)
+{
+  using std::abs;
+  using std::sqrt;
+  using std::pow;
+  Index start = firstCol + shift;
+  RealScalar c = m_computed(start, start);
+  RealScalar s = m_computed(start+i, start);
+  RealScalar r = sqrt(numext::abs2(c) + numext::abs2(s));
+  if (r == 0)
+  {
+    m_computed(start+i, start+i) = 0;
+    return;
+  }
+  m_computed(start,start) = r;  
+  m_computed(start+i, start) = 0;
+  m_computed(start+i, start+i) = 0;
+  
+  JacobiRotation<RealScalar> J(c/r,-s/r);
+  if (m_compU)  m_naiveU.middleRows(firstCol, size+1).applyOnTheRight(firstCol, firstCol+i, J);
+  else          m_naiveU.applyOnTheRight(firstCol, firstCol+i, J);
+}// end deflation 43
+
+
+// page 13
+// i,j >= 1, i!=j and |di - dj| < epsilon * norm2(M)
+// We apply two rotations to have zj = 0;
+// TODO deflation44 is still broken and not properly tested
+template <typename MatrixType>
+void BDCSVD<MatrixType>::deflation44(Index firstColu , Index firstColm, Index firstRowW, Index firstColW, Index i, Index j, Index size)
+{
+  using std::abs;
+  using std::sqrt;
+  using std::conj;
+  using std::pow;
+  RealScalar c = m_computed(firstColm+i, firstColm);
+  RealScalar s = m_computed(firstColm+j, firstColm);
+  RealScalar r = sqrt(numext::abs2(c) + numext::abs2(s));
+#ifdef  EIGEN_BDCSVD_DEBUG_VERBOSE
+  std::cout << "deflation 4.4: " << i << "," << j << " -> " << c << " " << s << " " << r << " ; "
+    << m_computed(firstColm + i-1, firstColm)  << " "
+    << m_computed(firstColm + i, firstColm)  << " "
+    << m_computed(firstColm + i+1, firstColm) << " "
+    << m_computed(firstColm + i+2, firstColm) << "\n";
+  std::cout << m_computed(firstColm + i-1, firstColm + i-1)  << " "
+    << m_computed(firstColm + i, firstColm+i)  << " "
+    << m_computed(firstColm + i+1, firstColm+i+1) << " "
+    << m_computed(firstColm + i+2, firstColm+i+2) << "\n";
+#endif
+  if (r==0)
+  {
+    m_computed(firstColm + i, firstColm + i) = m_computed(firstColm + j, firstColm + j);
+    return;
+  }
+  c/=r;
+  s/=r;
+  m_computed(firstColm + i, firstColm) = r;  
+  m_computed(firstColm + j, fir
