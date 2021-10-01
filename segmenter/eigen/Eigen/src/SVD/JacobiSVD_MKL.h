@@ -70,4 +70,23 @@ JacobiSVD<Matrix<EIGTYPE, Dynamic, Dynamic, EIGCOLROW, Dynamic, Dynamic>, ColPiv
   } else { ldvt=1; vt=&dummy; }\
   Matrix<MKLRTYPE, Dynamic, Dynamic> superb; superb.resize(m_diagSize, 1); \
   MatrixType m_temp; m_temp = matrix; \
-  LAPACKE_##MKLPREFIX##gesvd( matrix_order, jobu, jobvt, m_rows
+  LAPACKE_##MKLPREFIX##gesvd( matrix_order, jobu, jobvt, m_rows, m_cols, (MKLTYPE*)m_temp.data(), lda, (MKLRTYPE*)m_singularValues.data(), u, ldu, vt, ldvt, superb.data()); \
+  if (computeV()) m_matrixV = localV.adjoint(); \
+ /* for(int i=0;i<m_diagSize;i++) if (m_singularValues.coeffRef(i) < precision) { m_nonzeroSingularValues--; m_singularValues.coeffRef(i)=RealScalar(0);}*/ \
+  m_isInitialized = true; \
+  return *this; \
+}
+
+EIGEN_MKL_SVD(double,   double,        double, d, ColMajor, LAPACK_COL_MAJOR)
+EIGEN_MKL_SVD(float,    float,         float , s, ColMajor, LAPACK_COL_MAJOR)
+EIGEN_MKL_SVD(dcomplex, MKL_Complex16, double, z, ColMajor, LAPACK_COL_MAJOR)
+EIGEN_MKL_SVD(scomplex, MKL_Complex8,  float , c, ColMajor, LAPACK_COL_MAJOR)
+
+EIGEN_MKL_SVD(double,   double,        double, d, RowMajor, LAPACK_ROW_MAJOR)
+EIGEN_MKL_SVD(float,    float,         float , s, RowMajor, LAPACK_ROW_MAJOR)
+EIGEN_MKL_SVD(dcomplex, MKL_Complex16, double, z, RowMajor, LAPACK_ROW_MAJOR)
+EIGEN_MKL_SVD(scomplex, MKL_Complex8,  float , c, RowMajor, LAPACK_ROW_MAJOR)
+
+} // end namespace Eigen
+
+#endif // EIGEN_JACOBISVD_MKL_H
