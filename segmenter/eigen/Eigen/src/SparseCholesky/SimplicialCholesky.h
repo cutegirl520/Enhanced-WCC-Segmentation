@@ -271,4 +271,314 @@ namespace internal {
 
 template<typename _MatrixType, int _UpLo, typename _Ordering> struct traits<SimplicialLLT<_MatrixType,_UpLo,_Ordering> >
 {
-  typedef _MatrixType MatrixT
+  typedef _MatrixType MatrixType;
+  typedef _Ordering OrderingType;
+  enum { UpLo = _UpLo };
+  typedef typename MatrixType::Scalar                         Scalar;
+  typedef typename MatrixType::StorageIndex                   StorageIndex;
+  typedef SparseMatrix<Scalar, ColMajor, StorageIndex>        CholMatrixType;
+  typedef TriangularView<const CholMatrixType, Eigen::Lower>  MatrixL;
+  typedef TriangularView<const typename CholMatrixType::AdjointReturnType, Eigen::Upper>   MatrixU;
+  static inline MatrixL getL(const MatrixType& m) { return MatrixL(m); }
+  static inline MatrixU getU(const MatrixType& m) { return MatrixU(m.adjoint()); }
+};
+
+template<typename _MatrixType,int _UpLo, typename _Ordering> struct traits<SimplicialLDLT<_MatrixType,_UpLo,_Ordering> >
+{
+  typedef _MatrixType MatrixType;
+  typedef _Ordering OrderingType;
+  enum { UpLo = _UpLo };
+  typedef typename MatrixType::Scalar                             Scalar;
+  typedef typename MatrixType::StorageIndex                       StorageIndex;
+  typedef SparseMatrix<Scalar, ColMajor, StorageIndex>            CholMatrixType;
+  typedef TriangularView<const CholMatrixType, Eigen::UnitLower>  MatrixL;
+  typedef TriangularView<const typename CholMatrixType::AdjointReturnType, Eigen::UnitUpper> MatrixU;
+  static inline MatrixL getL(const MatrixType& m) { return MatrixL(m); }
+  static inline MatrixU getU(const MatrixType& m) { return MatrixU(m.adjoint()); }
+};
+
+template<typename _MatrixType, int _UpLo, typename _Ordering> struct traits<SimplicialCholesky<_MatrixType,_UpLo,_Ordering> >
+{
+  typedef _MatrixType MatrixType;
+  typedef _Ordering OrderingType;
+  enum { UpLo = _UpLo };
+};
+
+}
+
+/** \ingroup SparseCholesky_Module
+  * \class SimplicialLLT
+  * \brief A direct sparse LLT Cholesky factorizations
+  *
+  * This class provides a LL^T Cholesky factorizations of sparse matrices that are
+  * selfadjoint and positive definite. The factorization allows for solving A.X = B where
+  * X and B can be either dense or sparse.
+  * 
+  * In order to reduce the fill-in, a symmetric permutation P is applied prior to the factorization
+  * such that the factorized matrix is P A P^-1.
+  *
+  * \tparam _MatrixType the type of the sparse matrix A, it must be a SparseMatrix<>
+  * \tparam _UpLo the triangular part that will be used for the computations. It can be Lower
+  *               or Upper. Default is Lower.
+  * \tparam _Ordering The ordering method to use, either AMDOrdering<> or NaturalOrdering<>. Default is AMDOrdering<>
+  *
+  * \implsparsesolverconcept
+  *
+  * \sa class SimplicialLDLT, class AMDOrdering, class NaturalOrdering
+  */
+template<typename _MatrixType, int _UpLo, typename _Ordering>
+    class SimplicialLLT : public SimplicialCholeskyBase<SimplicialLLT<_MatrixType,_UpLo,_Ordering> >
+{
+public:
+    typedef _MatrixType MatrixType;
+    enum { UpLo = _UpLo };
+    typedef SimplicialCholeskyBase<SimplicialLLT> Base;
+    typedef typename MatrixType::Scalar Scalar;
+    typedef typename MatrixType::RealScalar RealScalar;
+    typedef typename MatrixType::StorageIndex StorageIndex;
+    typedef SparseMatrix<Scalar,ColMajor,Index> CholMatrixType;
+    typedef Matrix<Scalar,Dynamic,1> VectorType;
+    typedef internal::traits<SimplicialLLT> Traits;
+    typedef typename Traits::MatrixL  MatrixL;
+    typedef typename Traits::MatrixU  MatrixU;
+public:
+    /** Default constructor */
+    SimplicialLLT() : Base() {}
+    /** Constructs and performs the LLT factorization of \a matrix */
+    explicit SimplicialLLT(const MatrixType& matrix)
+        : Base(matrix) {}
+
+    /** \returns an expression of the factor L */
+    inline const MatrixL matrixL() const {
+        eigen_assert(Base::m_factorizationIsOk && "Simplicial LLT not factorized");
+        return Traits::getL(Base::m_matrix);
+    }
+
+    /** \returns an expression of the factor U (= L^*) */
+    inline const MatrixU matrixU() const {
+        eigen_assert(Base::m_factorizationIsOk && "Simplicial LLT not factorized");
+        return Traits::getU(Base::m_matrix);
+    }
+    
+    /** Computes the sparse Cholesky decomposition of \a matrix */
+    SimplicialLLT& compute(const MatrixType& matrix)
+    {
+      Base::template compute<false>(matrix);
+      return *this;
+    }
+
+    /** Performs a symbolic decomposition on the sparcity of \a matrix.
+      *
+      * This function is particularly useful when solving for several problems having the same structure.
+      *
+      * \sa factorize()
+      */
+    void analyzePattern(const MatrixType& a)
+    {
+      Base::analyzePattern(a, false);
+    }
+
+    /** Performs a numeric decomposition of \a matrix
+      *
+      * The given matrix must has the same sparcity than the matrix on which the symbolic decomposition has been performed.
+      *
+      * \sa analyzePattern()
+      */
+    void factorize(const MatrixType& a)
+    {
+      Base::template factorize<false>(a);
+    }
+
+    /** \returns the determinant of the underlying matrix from the current factorization */
+    Scalar determinant() const
+    {
+      Scalar detL = Base::m_matrix.diagonal().prod();
+      return numext::abs2(detL);
+    }
+};
+
+/** \ingroup SparseCholesky_Module
+  * \class SimplicialLDLT
+  * \brief A direct sparse LDLT Cholesky factorizations without square root.
+  *
+  * This class provides a LDL^T Cholesky factorizations without square root of sparse matrices that are
+  * selfadjoint and positive definite. The factorization allows for solving A.X = B where
+  * X and B can be either dense or sparse.
+  * 
+  * In order to reduce the fill-in, a symmetric permutation P is applied prior to the factorization
+  * such that the factorized matrix is P A P^-1.
+  *
+  * \tparam _MatrixType the type of the sparse matrix A, it must be a SparseMatrix<>
+  * \tparam _UpLo the triangular part that will be used for the computations. It can be Lower
+  *               or Upper. Default is Lower.
+  * \tparam _Ordering The ordering method to use, either AMDOrdering<> or NaturalOrdering<>. Default is AMDOrdering<>
+  *
+  * \implsparsesolverconcept
+  *
+  * \sa class SimplicialLLT, class AMDOrdering, class NaturalOrdering
+  */
+template<typename _MatrixType, int _UpLo, typename _Ordering>
+    class SimplicialLDLT : public SimplicialCholeskyBase<SimplicialLDLT<_MatrixType,_UpLo,_Ordering> >
+{
+public:
+    typedef _MatrixType MatrixType;
+    enum { UpLo = _UpLo };
+    typedef SimplicialCholeskyBase<SimplicialLDLT> Base;
+    typedef typename MatrixType::Scalar Scalar;
+    typedef typename MatrixType::RealScalar RealScalar;
+    typedef typename MatrixType::StorageIndex StorageIndex;
+    typedef SparseMatrix<Scalar,ColMajor,StorageIndex> CholMatrixType;
+    typedef Matrix<Scalar,Dynamic,1> VectorType;
+    typedef internal::traits<SimplicialLDLT> Traits;
+    typedef typename Traits::MatrixL  MatrixL;
+    typedef typename Traits::MatrixU  MatrixU;
+public:
+    /** Default constructor */
+    SimplicialLDLT() : Base() {}
+
+    /** Constructs and performs the LLT factorization of \a matrix */
+    explicit SimplicialLDLT(const MatrixType& matrix)
+        : Base(matrix) {}
+
+    /** \returns a vector expression of the diagonal D */
+    inline const VectorType vectorD() const {
+        eigen_assert(Base::m_factorizationIsOk && "Simplicial LDLT not factorized");
+        return Base::m_diag;
+    }
+    /** \returns an expression of the factor L */
+    inline const MatrixL matrixL() const {
+        eigen_assert(Base::m_factorizationIsOk && "Simplicial LDLT not factorized");
+        return Traits::getL(Base::m_matrix);
+    }
+
+    /** \returns an expression of the factor U (= L^*) */
+    inline const MatrixU matrixU() const {
+        eigen_assert(Base::m_factorizationIsOk && "Simplicial LDLT not factorized");
+        return Traits::getU(Base::m_matrix);
+    }
+
+    /** Computes the sparse Cholesky decomposition of \a matrix */
+    SimplicialLDLT& compute(const MatrixType& matrix)
+    {
+      Base::template compute<true>(matrix);
+      return *this;
+    }
+    
+    /** Performs a symbolic decomposition on the sparcity of \a matrix.
+      *
+      * This function is particularly useful when solving for several problems having the same structure.
+      *
+      * \sa factorize()
+      */
+    void analyzePattern(const MatrixType& a)
+    {
+      Base::analyzePattern(a, true);
+    }
+
+    /** Performs a numeric decomposition of \a matrix
+      *
+      * The given matrix must has the same sparcity than the matrix on which the symbolic decomposition has been performed.
+      *
+      * \sa analyzePattern()
+      */
+    void factorize(const MatrixType& a)
+    {
+      Base::template factorize<true>(a);
+    }
+
+    /** \returns the determinant of the underlying matrix from the current factorization */
+    Scalar determinant() const
+    {
+      return Base::m_diag.prod();
+    }
+};
+
+/** \deprecated use SimplicialLDLT or class SimplicialLLT
+  * \ingroup SparseCholesky_Module
+  * \class SimplicialCholesky
+  *
+  * \sa class SimplicialLDLT, class SimplicialLLT
+  */
+template<typename _MatrixType, int _UpLo, typename _Ordering>
+    class SimplicialCholesky : public SimplicialCholeskyBase<SimplicialCholesky<_MatrixType,_UpLo,_Ordering> >
+{
+public:
+    typedef _MatrixType MatrixType;
+    enum { UpLo = _UpLo };
+    typedef SimplicialCholeskyBase<SimplicialCholesky> Base;
+    typedef typename MatrixType::Scalar Scalar;
+    typedef typename MatrixType::RealScalar RealScalar;
+    typedef typename MatrixType::StorageIndex StorageIndex;
+    typedef SparseMatrix<Scalar,ColMajor,StorageIndex> CholMatrixType;
+    typedef Matrix<Scalar,Dynamic,1> VectorType;
+    typedef internal::traits<SimplicialCholesky> Traits;
+    typedef internal::traits<SimplicialLDLT<MatrixType,UpLo> > LDLTTraits;
+    typedef internal::traits<SimplicialLLT<MatrixType,UpLo>  > LLTTraits;
+  public:
+    SimplicialCholesky() : Base(), m_LDLT(true) {}
+
+    explicit SimplicialCholesky(const MatrixType& matrix)
+      : Base(), m_LDLT(true)
+    {
+      compute(matrix);
+    }
+
+    SimplicialCholesky& setMode(SimplicialCholeskyMode mode)
+    {
+      switch(mode)
+      {
+      case SimplicialCholeskyLLT:
+        m_LDLT = false;
+        break;
+      case SimplicialCholeskyLDLT:
+        m_LDLT = true;
+        break;
+      default:
+        break;
+      }
+
+      return *this;
+    }
+
+    inline const VectorType vectorD() const {
+        eigen_assert(Base::m_factorizationIsOk && "Simplicial Cholesky not factorized");
+        return Base::m_diag;
+    }
+    inline const CholMatrixType rawMatrix() const {
+        eigen_assert(Base::m_factorizationIsOk && "Simplicial Cholesky not factorized");
+        return Base::m_matrix;
+    }
+    
+    /** Computes the sparse Cholesky decomposition of \a matrix */
+    SimplicialCholesky& compute(const MatrixType& matrix)
+    {
+      if(m_LDLT)
+        Base::template compute<true>(matrix);
+      else
+        Base::template compute<false>(matrix);
+      return *this;
+    }
+
+    /** Performs a symbolic decomposition on the sparcity of \a matrix.
+      *
+      * This function is particularly useful when solving for several problems having the same structure.
+      *
+      * \sa factorize()
+      */
+    void analyzePattern(const MatrixType& a)
+    {
+      Base::analyzePattern(a, m_LDLT);
+    }
+
+    /** Performs a numeric decomposition of \a matrix
+      *
+      * The given matrix must has the same sparcity than the matrix on which the symbolic decomposition has been performed.
+      *
+      * \sa analyzePattern()
+      */
+    void factorize(const MatrixType& a)
+    {
+      if(m_LDLT)
+        Base::template factorize<true>(a);
+      else
+        Base::template facto
