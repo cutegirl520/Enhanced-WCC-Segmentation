@@ -581,4 +581,109 @@ public:
       if(m_LDLT)
         Base::template factorize<true>(a);
       else
-        Base::template facto
+        Base::template factorize<false>(a);
+    }
+
+    /** \internal */
+    template<typename Rhs,typename Dest>
+    void _solve_impl(const MatrixBase<Rhs> &b, MatrixBase<Dest> &dest) const
+    {
+      eigen_assert(Base::m_factorizationIsOk && "The decomposition is not in a valid state for solving, you must first call either compute() or symbolic()/numeric()");
+      eigen_assert(Base::m_matrix.rows()==b.rows());
+
+      if(Base::m_info!=Success)
+        return;
+
+      if(Base::m_P.size()>0)
+        dest = Base::m_P * b;
+      else
+        dest = b;
+
+      if(Base::m_matrix.nonZeros()>0) // otherwise L==I
+      {
+        if(m_LDLT)
+          LDLTTraits::getL(Base::m_matrix).solveInPlace(dest);
+        else
+          LLTTraits::getL(Base::m_matrix).solveInPlace(dest);
+      }
+
+      if(Base::m_diag.size()>0)
+        dest = Base::m_diag.asDiagonal().inverse() * dest;
+
+      if (Base::m_matrix.nonZeros()>0) // otherwise I==I
+      {
+        if(m_LDLT)
+          LDLTTraits::getU(Base::m_matrix).solveInPlace(dest);
+        else
+          LLTTraits::getU(Base::m_matrix).solveInPlace(dest);
+      }
+
+      if(Base::m_P.size()>0)
+        dest = Base::m_Pinv * dest;
+    }
+    
+    /** \internal */
+    template<typename Rhs,typename Dest>
+    void _solve_impl(const SparseMatrixBase<Rhs> &b, SparseMatrixBase<Dest> &dest) const
+    {
+      internal::solve_sparse_through_dense_panels(*this, b, dest);
+    }
+    
+    Scalar determinant() const
+    {
+      if(m_LDLT)
+      {
+        return Base::m_diag.prod();
+      }
+      else
+      {
+        Scalar detL = Diagonal<const CholMatrixType>(Base::m_matrix).prod();
+        return numext::abs2(detL);
+      }
+    }
+    
+  protected:
+    bool m_LDLT;
+};
+
+template<typename Derived>
+void SimplicialCholeskyBase<Derived>::ordering(const MatrixType& a, ConstCholMatrixPtr &pmat, CholMatrixType& ap)
+{
+  eigen_assert(a.rows()==a.cols());
+  const Index size = a.rows();
+  pmat = &ap;
+  // Note that ordering methods compute the inverse permutation
+  if(!internal::is_same<OrderingType,NaturalOrdering<Index> >::value)
+  {
+    {
+      CholMatrixType C;
+      C = a.template selfadjointView<UpLo>();
+      
+      OrderingType ordering;
+      ordering(C,m_Pinv);
+    }
+
+    if(m_Pinv.size()>0) m_P = m_Pinv.inverse();
+    else                m_P.resize(0);
+    
+    ap.resize(size,size);
+    ap.template selfadjointView<Upper>() = a.template selfadjointView<UpLo>().twistedBy(m_P);
+  }
+  else
+  {
+    m_Pinv.resize(0);
+    m_P.resize(0);
+    if(int(UpLo)==int(Lower) || MatrixType::IsRowMajor)
+    {
+      // we have to transpose the lower part to to the upper one
+      ap.resize(size,size);
+      ap.template selfadjointView<Upper>() = a.template selfadjointView<UpLo>();
+    }
+    else
+      internal::simplicial_cholesky_grab_input<CholMatrixType,MatrixType>::run(a, pmat, ap);
+  }  
+}
+
+} // end namespace Eigen
+
+#endif // EIGEN_SIMPLICIAL_CHOLESKY_H
