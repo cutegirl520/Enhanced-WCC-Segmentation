@@ -148,4 +148,270 @@ class SparseMatrix
 
     /** \returns a const pointer to the array of inner indices.
       * This function is aimed at interoperability with other libraries.
-   
+      * \sa valuePtr(), outerIndexPtr() */
+    inline const StorageIndex* innerIndexPtr() const { return m_data.indexPtr(); }
+    /** \returns a non-const pointer to the array of inner indices.
+      * This function is aimed at interoperability with other libraries.
+      * \sa valuePtr(), outerIndexPtr() */
+    inline StorageIndex* innerIndexPtr() { return m_data.indexPtr(); }
+
+    /** \returns a const pointer to the array of the starting positions of the inner vectors.
+      * This function is aimed at interoperability with other libraries.
+      * \sa valuePtr(), innerIndexPtr() */
+    inline const StorageIndex* outerIndexPtr() const { return m_outerIndex; }
+    /** \returns a non-const pointer to the array of the starting positions of the inner vectors.
+      * This function is aimed at interoperability with other libraries.
+      * \sa valuePtr(), innerIndexPtr() */
+    inline StorageIndex* outerIndexPtr() { return m_outerIndex; }
+
+    /** \returns a const pointer to the array of the number of non zeros of the inner vectors.
+      * This function is aimed at interoperability with other libraries.
+      * \warning it returns the null pointer 0 in compressed mode */
+    inline const StorageIndex* innerNonZeroPtr() const { return m_innerNonZeros; }
+    /** \returns a non-const pointer to the array of the number of non zeros of the inner vectors.
+      * This function is aimed at interoperability with other libraries.
+      * \warning it returns the null pointer 0 in compressed mode */
+    inline StorageIndex* innerNonZeroPtr() { return m_innerNonZeros; }
+
+    /** \internal */
+    inline Storage& data() { return m_data; }
+    /** \internal */
+    inline const Storage& data() const { return m_data; }
+
+    /** \returns the value of the matrix at position \a i, \a j
+      * This function returns Scalar(0) if the element is an explicit \em zero */
+    inline Scalar coeff(Index row, Index col) const
+    {
+      eigen_assert(row>=0 && row<rows() && col>=0 && col<cols());
+      
+      const Index outer = IsRowMajor ? row : col;
+      const Index inner = IsRowMajor ? col : row;
+      Index end = m_innerNonZeros ? m_outerIndex[outer] + m_innerNonZeros[outer] : m_outerIndex[outer+1];
+      return m_data.atInRange(m_outerIndex[outer], end, StorageIndex(inner));
+    }
+
+    /** \returns a non-const reference to the value of the matrix at position \a i, \a j
+      *
+      * If the element does not exist then it is inserted via the insert(Index,Index) function
+      * which itself turns the matrix into a non compressed form if that was not the case.
+      *
+      * This is a O(log(nnz_j)) operation (binary search) plus the cost of insert(Index,Index)
+      * function if the element does not already exist.
+      */
+    inline Scalar& coeffRef(Index row, Index col)
+    {
+      eigen_assert(row>=0 && row<rows() && col>=0 && col<cols());
+      
+      const Index outer = IsRowMajor ? row : col;
+      const Index inner = IsRowMajor ? col : row;
+
+      Index start = m_outerIndex[outer];
+      Index end = m_innerNonZeros ? m_outerIndex[outer] + m_innerNonZeros[outer] : m_outerIndex[outer+1];
+      eigen_assert(end>=start && "you probably called coeffRef on a non finalized matrix");
+      if(end<=start)
+        return insert(row,col);
+      const Index p = m_data.searchLowerIndex(start,end-1,StorageIndex(inner));
+      if((p<end) && (m_data.index(p)==inner))
+        return m_data.value(p);
+      else
+        return insert(row,col);
+    }
+
+    /** \returns a reference to a novel non zero coefficient with coordinates \a row x \a col.
+      * The non zero coefficient must \b not already exist.
+      *
+      * If the matrix \c *this is in compressed mode, then \c *this is turned into uncompressed
+      * mode while reserving room for 2 x this->innerSize() non zeros if reserve(Index) has not been called earlier.
+      * In this case, the insertion procedure is optimized for a \e sequential insertion mode where elements are assumed to be
+      * inserted by increasing outer-indices.
+      * 
+      * If that's not the case, then it is strongly recommended to either use a triplet-list to assemble the matrix, or to first
+      * call reserve(const SizesType &) to reserve the appropriate number of non-zero elements per inner vector.
+      *
+      * Assuming memory has been appropriately reserved, this function performs a sorted insertion in O(1)
+      * if the elements of each inner vector are inserted in increasing inner index order, and in O(nnz_j) for a random insertion.
+      *
+      */
+    Scalar& insert(Index row, Index col);
+
+  public:
+
+    /** Removes all non zeros but keep allocated memory
+      *
+      * This function does not free the currently allocated memory. To release as much as memory as possible,
+      * call \code mat.data().squeeze(); \endcode after resizing it.
+      * 
+      * \sa resize(Index,Index), data()
+      */
+    inline void setZero()
+    {
+      m_data.clear();
+      memset(m_outerIndex, 0, (m_outerSize+1)*sizeof(StorageIndex));
+      if(m_innerNonZeros)
+        memset(m_innerNonZeros, 0, (m_outerSize)*sizeof(StorageIndex));
+    }
+
+    /** Preallocates \a reserveSize non zeros.
+      *
+      * Precondition: the matrix must be in compressed mode. */
+    inline void reserve(Index reserveSize)
+    {
+      eigen_assert(isCompressed() && "This function does not make sense in non compressed mode.");
+      m_data.reserve(reserveSize);
+    }
+    
+    #ifdef EIGEN_PARSED_BY_DOXYGEN
+    /** Preallocates \a reserveSize[\c j] non zeros for each column (resp. row) \c j.
+      *
+      * This function turns the matrix in non-compressed mode.
+      * 
+      * The type \c SizesType must expose the following interface:
+        \code
+        typedef value_type;
+        const value_type& operator[](i) const;
+        \endcode
+      * for \c i in the [0,this->outerSize()[ range.
+      * Typical choices include std::vector<int>, Eigen::VectorXi, Eigen::VectorXi::Constant, etc.
+      */
+    template<class SizesType>
+    inline void reserve(const SizesType& reserveSizes);
+    #else
+    template<class SizesType>
+    inline void reserve(const SizesType& reserveSizes, const typename SizesType::value_type& enableif =
+    #if (!EIGEN_COMP_MSVC) || (EIGEN_COMP_MSVC>=1500) // MSVC 2005 fails to compile with this typename
+        typename
+    #endif
+        SizesType::value_type())
+    {
+      EIGEN_UNUSED_VARIABLE(enableif);
+      reserveInnerVectors(reserveSizes);
+    }
+    #endif // EIGEN_PARSED_BY_DOXYGEN
+  protected:
+    template<class SizesType>
+    inline void reserveInnerVectors(const SizesType& reserveSizes)
+    {
+      if(isCompressed())
+      {
+        Index totalReserveSize = 0;
+        // turn the matrix into non-compressed mode
+        m_innerNonZeros = static_cast<StorageIndex*>(std::malloc(m_outerSize * sizeof(StorageIndex)));
+        if (!m_innerNonZeros) internal::throw_std_bad_alloc();
+        
+        // temporarily use m_innerSizes to hold the new starting points.
+        StorageIndex* newOuterIndex = m_innerNonZeros;
+        
+        StorageIndex count = 0;
+        for(Index j=0; j<m_outerSize; ++j)
+        {
+          newOuterIndex[j] = count;
+          count += reserveSizes[j] + (m_outerIndex[j+1]-m_outerIndex[j]);
+          totalReserveSize += reserveSizes[j];
+        }
+        m_data.reserve(totalReserveSize);
+        StorageIndex previousOuterIndex = m_outerIndex[m_outerSize];
+        for(Index j=m_outerSize-1; j>=0; --j)
+        {
+          StorageIndex innerNNZ = previousOuterIndex - m_outerIndex[j];
+          for(Index i=innerNNZ-1; i>=0; --i)
+          {
+            m_data.index(newOuterIndex[j]+i) = m_data.index(m_outerIndex[j]+i);
+            m_data.value(newOuterIndex[j]+i) = m_data.value(m_outerIndex[j]+i);
+          }
+          previousOuterIndex = m_outerIndex[j];
+          m_outerIndex[j] = newOuterIndex[j];
+          m_innerNonZeros[j] = innerNNZ;
+        }
+        m_outerIndex[m_outerSize] = m_outerIndex[m_outerSize-1] + m_innerNonZeros[m_outerSize-1] + reserveSizes[m_outerSize-1];
+        
+        m_data.resize(m_outerIndex[m_outerSize]);
+      }
+      else
+      {
+        StorageIndex* newOuterIndex = static_cast<StorageIndex*>(std::malloc((m_outerSize+1)*sizeof(StorageIndex)));
+        if (!newOuterIndex) internal::throw_std_bad_alloc();
+        
+        StorageIndex count = 0;
+        for(Index j=0; j<m_outerSize; ++j)
+        {
+          newOuterIndex[j] = count;
+          StorageIndex alreadyReserved = (m_outerIndex[j+1]-m_outerIndex[j]) - m_innerNonZeros[j];
+          StorageIndex toReserve = std::max<StorageIndex>(reserveSizes[j], alreadyReserved);
+          count += toReserve + m_innerNonZeros[j];
+        }
+        newOuterIndex[m_outerSize] = count;
+        
+        m_data.resize(count);
+        for(Index j=m_outerSize-1; j>=0; --j)
+        {
+          Index offset = newOuterIndex[j] - m_outerIndex[j];
+          if(offset>0)
+          {
+            StorageIndex innerNNZ = m_innerNonZeros[j];
+            for(Index i=innerNNZ-1; i>=0; --i)
+            {
+              m_data.index(newOuterIndex[j]+i) = m_data.index(m_outerIndex[j]+i);
+              m_data.value(newOuterIndex[j]+i) = m_data.value(m_outerIndex[j]+i);
+            }
+          }
+        }
+        
+        std::swap(m_outerIndex, newOuterIndex);
+        std::free(newOuterIndex);
+      }
+      
+    }
+  public:
+
+    //--- low level purely coherent filling ---
+
+    /** \internal
+      * \returns a reference to the non zero coefficient at position \a row, \a col assuming that:
+      * - the nonzero does not already exist
+      * - the new coefficient is the last one according to the storage order
+      *
+      * Before filling a given inner vector you must call the statVec(Index) function.
+      *
+      * After an insertion session, you should call the finalize() function.
+      *
+      * \sa insert, insertBackByOuterInner, startVec */
+    inline Scalar& insertBack(Index row, Index col)
+    {
+      return insertBackByOuterInner(IsRowMajor?row:col, IsRowMajor?col:row);
+    }
+
+    /** \internal
+      * \sa insertBack, startVec */
+    inline Scalar& insertBackByOuterInner(Index outer, Index inner)
+    {
+      eigen_assert(Index(m_outerIndex[outer+1]) == m_data.size() && "Invalid ordered insertion (invalid outer index)");
+      eigen_assert( (m_outerIndex[outer+1]-m_outerIndex[outer]==0 || m_data.index(m_data.size()-1)<inner) && "Invalid ordered insertion (invalid inner index)");
+      Index p = m_outerIndex[outer+1];
+      ++m_outerIndex[outer+1];
+      m_data.append(Scalar(0), inner);
+      return m_data.value(p);
+    }
+
+    /** \internal
+      * \warning use it only if you know what you are doing */
+    inline Scalar& insertBackByOuterInnerUnordered(Index outer, Index inner)
+    {
+      Index p = m_outerIndex[outer+1];
+      ++m_outerIndex[outer+1];
+      m_data.append(Scalar(0), inner);
+      return m_data.value(p);
+    }
+
+    /** \internal
+      * \sa insertBack, insertBackByOuterInner */
+    inline void startVec(Index outer)
+    {
+      eigen_assert(m_outerIndex[outer]==Index(m_data.size()) && "You must call startVec for each inner vector sequentially");
+      eigen_assert(m_outerIndex[outer+1]==0 && "You must call startVec for each inner vector sequentially");
+      m_outerIndex[outer+1] = m_outerIndex[outer];
+    }
+
+    /** \internal
+      * Must be called after inserting a set of non zero entries using the low level compressed API.
+      */
+    inline void 
