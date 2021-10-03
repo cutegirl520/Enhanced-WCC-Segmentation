@@ -731,4 +731,332 @@ class SparseMatrix
       std::swap(m_innerSize, other.m_innerSize);
       std::swap(m_outerSize, other.m_outerSize);
       std::swap(m_innerNonZeros, other.m_innerNonZeros);
-      m_data
+      m_data.swap(other.m_data);
+    }
+
+    /** Sets *this to the identity matrix.
+      * This function also turns the matrix into compressed mode, and drop any reserved memory. */
+    inline void setIdentity()
+    {
+      eigen_assert(rows() == cols() && "ONLY FOR SQUARED MATRICES");
+      this->m_data.resize(rows());
+      Eigen::Map<IndexVector>(this->m_data.indexPtr(), rows()).setLinSpaced(0, StorageIndex(rows()-1));
+      Eigen::Map<ScalarVector>(this->m_data.valuePtr(), rows()).setOnes();
+      Eigen::Map<IndexVector>(this->m_outerIndex, rows()+1).setLinSpaced(0, StorageIndex(rows()));
+      std::free(m_innerNonZeros);
+      m_innerNonZeros = 0;
+    }
+    inline SparseMatrix& operator=(const SparseMatrix& other)
+    {
+      if (other.isRValue())
+      {
+        swap(other.const_cast_derived());
+      }
+      else if(this!=&other)
+      {
+        #ifdef EIGEN_SPARSE_CREATE_TEMPORARY_PLUGIN
+          EIGEN_SPARSE_CREATE_TEMPORARY_PLUGIN
+        #endif
+        initAssignment(other);
+        if(other.isCompressed())
+        {
+          internal::smart_copy(other.m_outerIndex, other.m_outerIndex + m_outerSize + 1, m_outerIndex);
+          m_data = other.m_data;
+        }
+        else
+        {
+          Base::operator=(other);
+        }
+      }
+      return *this;
+    }
+
+#ifndef EIGEN_PARSED_BY_DOXYGEN
+    template<typename OtherDerived>
+    inline SparseMatrix& operator=(const EigenBase<OtherDerived>& other)
+    { return Base::operator=(other.derived()); }
+#endif // EIGEN_PARSED_BY_DOXYGEN
+
+    template<typename OtherDerived>
+    EIGEN_DONT_INLINE SparseMatrix& operator=(const SparseMatrixBase<OtherDerived>& other);
+
+    friend std::ostream & operator << (std::ostream & s, const SparseMatrix& m)
+    {
+      EIGEN_DBG_SPARSE(
+        s << "Nonzero entries:\n";
+        if(m.isCompressed())
+          for (Index i=0; i<m.nonZeros(); ++i)
+            s << "(" << m.m_data.value(i) << "," << m.m_data.index(i) << ") ";
+        else
+          for (Index i=0; i<m.outerSize(); ++i)
+          {
+            Index p = m.m_outerIndex[i];
+            Index pe = m.m_outerIndex[i]+m.m_innerNonZeros[i];
+            Index k=p;
+            for (; k<pe; ++k)
+              s << "(" << m.m_data.value(k) << "," << m.m_data.index(k) << ") ";
+            for (; k<m.m_outerIndex[i+1]; ++k)
+              s << "(_,_) ";
+          }
+        s << std::endl;
+        s << std::endl;
+        s << "Outer pointers:\n";
+        for (Index i=0; i<m.outerSize(); ++i)
+          s << m.m_outerIndex[i] << " ";
+        s << " $" << std::endl;
+        if(!m.isCompressed())
+        {
+          s << "Inner non zeros:\n";
+          for (Index i=0; i<m.outerSize(); ++i)
+            s << m.m_innerNonZeros[i] << " ";
+          s << " $" << std::endl;
+        }
+        s << std::endl;
+      );
+      s << static_cast<const SparseMatrixBase<SparseMatrix>&>(m);
+      return s;
+    }
+
+    /** Destructor */
+    inline ~SparseMatrix()
+    {
+      std::free(m_outerIndex);
+      std::free(m_innerNonZeros);
+    }
+
+    /** Overloaded for performance */
+    Scalar sum() const;
+    
+#   ifdef EIGEN_SPARSEMATRIX_PLUGIN
+#     include EIGEN_SPARSEMATRIX_PLUGIN
+#   endif
+
+protected:
+
+    template<typename Other>
+    void initAssignment(const Other& other)
+    {
+      resize(other.rows(), other.cols());
+      if(m_innerNonZeros)
+      {
+        std::free(m_innerNonZeros);
+        m_innerNonZeros = 0;
+      }
+    }
+
+    /** \internal
+      * \sa insert(Index,Index) */
+    EIGEN_DONT_INLINE Scalar& insertCompressed(Index row, Index col);
+
+    /** \internal
+      * A vector object that is equal to 0 everywhere but v at the position i */
+    class SingletonVector
+    {
+        StorageIndex m_index;
+        StorageIndex m_value;
+      public:
+        typedef StorageIndex value_type;
+        SingletonVector(Index i, Index v)
+          : m_index(convert_index(i)), m_value(convert_index(v))
+        {}
+
+        StorageIndex operator[](Index i) const { return i==m_index ? m_value : 0; }
+    };
+
+    /** \internal
+      * \sa insert(Index,Index) */
+    EIGEN_DONT_INLINE Scalar& insertUncompressed(Index row, Index col);
+
+public:
+    /** \internal
+      * \sa insert(Index,Index) */
+    EIGEN_STRONG_INLINE Scalar& insertBackUncompressed(Index row, Index col)
+    {
+      const Index outer = IsRowMajor ? row : col;
+      const Index inner = IsRowMajor ? col : row;
+
+      eigen_assert(!isCompressed());
+      eigen_assert(m_innerNonZeros[outer]<=(m_outerIndex[outer+1] - m_outerIndex[outer]));
+
+      Index p = m_outerIndex[outer] + m_innerNonZeros[outer]++;
+      m_data.index(p) = convert_index(inner);
+      return (m_data.value(p) = 0);
+    }
+
+private:
+  static void check_template_parameters()
+  {
+    EIGEN_STATIC_ASSERT(NumTraits<StorageIndex>::IsSigned,THE_INDEX_TYPE_MUST_BE_A_SIGNED_TYPE);
+    EIGEN_STATIC_ASSERT((Options&(ColMajor|RowMajor))==Options,INVALID_MATRIX_TEMPLATE_PARAMETERS);
+  }
+
+  struct default_prunning_func {
+    default_prunning_func(const Scalar& ref, const RealScalar& eps) : reference(ref), epsilon(eps) {}
+    inline bool operator() (const Index&, const Index&, const Scalar& value) const
+    {
+      return !internal::isMuchSmallerThan(value, reference, epsilon);
+    }
+    Scalar reference;
+    RealScalar epsilon;
+  };
+};
+
+namespace internal {
+
+template<typename InputIterator, typename SparseMatrixType, typename DupFunctor>
+void set_from_triplets(const InputIterator& begin, const InputIterator& end, SparseMatrixType& mat, DupFunctor dup_func)
+{
+  enum { IsRowMajor = SparseMatrixType::IsRowMajor };
+  typedef typename SparseMatrixType::Scalar Scalar;
+  typedef typename SparseMatrixType::StorageIndex StorageIndex;
+  SparseMatrix<Scalar,IsRowMajor?ColMajor:RowMajor,StorageIndex> trMat(mat.rows(),mat.cols());
+
+  if(begin!=end)
+  {
+    // pass 1: count the nnz per inner-vector
+    typename SparseMatrixType::IndexVector wi(trMat.outerSize());
+    wi.setZero();
+    for(InputIterator it(begin); it!=end; ++it)
+    {
+      eigen_assert(it->row()>=0 && it->row()<mat.rows() && it->col()>=0 && it->col()<mat.cols());
+      wi(IsRowMajor ? it->col() : it->row())++;
+    }
+
+    // pass 2: insert all the elements into trMat
+    trMat.reserve(wi);
+    for(InputIterator it(begin); it!=end; ++it)
+      trMat.insertBackUncompressed(it->row(),it->col()) = it->value();
+
+    // pass 3:
+    trMat.collapseDuplicates(dup_func);
+  }
+
+  // pass 4: transposed copy -> implicit sorting
+  mat = trMat;
+}
+
+}
+
+
+/** Fill the matrix \c *this with the list of \em triplets defined by the iterator range \a begin - \a end.
+  *
+  * A \em triplet is a tuple (i,j,value) defining a non-zero element.
+  * The input list of triplets does not have to be sorted, and can contains duplicated elements.
+  * In any case, the result is a \b sorted and \b compressed sparse matrix where the duplicates have been summed up.
+  * This is a \em O(n) operation, with \em n the number of triplet elements.
+  * The initial contents of \c *this is destroyed.
+  * The matrix \c *this must be properly resized beforehand using the SparseMatrix(Index,Index) constructor,
+  * or the resize(Index,Index) method. The sizes are not extracted from the triplet list.
+  *
+  * The \a InputIterators value_type must provide the following interface:
+  * \code
+  * Scalar value() const; // the value
+  * Scalar row() const;   // the row index i
+  * Scalar col() const;   // the column index j
+  * \endcode
+  * See for instance the Eigen::Triplet template class.
+  *
+  * Here is a typical usage example:
+  * \code
+    typedef Triplet<double> T;
+    std::vector<T> tripletList;
+    triplets.reserve(estimation_of_entries);
+    for(...)
+    {
+      // ...
+      tripletList.push_back(T(i,j,v_ij));
+    }
+    SparseMatrixType m(rows,cols);
+    m.setFromTriplets(tripletList.begin(), tripletList.end());
+    // m is ready to go!
+  * \endcode
+  *
+  * \warning The list of triplets is read multiple times (at least twice). Therefore, it is not recommended to define
+  * an abstract iterator over a complex data-structure that would be expensive to evaluate. The triplets should rather
+  * be explicitely stored into a std::vector for instance.
+  */
+template<typename Scalar, int _Options, typename _Index>
+template<typename InputIterators>
+void SparseMatrix<Scalar,_Options,_Index>::setFromTriplets(const InputIterators& begin, const InputIterators& end)
+{
+  internal::set_from_triplets<InputIterators, SparseMatrix<Scalar,_Options,_Index> >(begin, end, *this, internal::scalar_sum_op<Scalar,Scalar>());
+}
+
+/** The same as setFromTriplets but when duplicates are met the functor \a dup_func is applied:
+  * \code
+  * value = dup_func(OldValue, NewValue)
+  * \endcode 
+  * Here is a C++11 example keeping the latest entry only:
+  * \code
+  * mat.setFromTriplets(triplets.begin(), triplets.end(), [] (const Scalar&,const Scalar &b) { return b; });
+  * \endcode
+  */
+template<typename Scalar, int _Options, typename _Index>
+template<typename InputIterators,typename DupFunctor>
+void SparseMatrix<Scalar,_Options,_Index>::setFromTriplets(const InputIterators& begin, const InputIterators& end, DupFunctor dup_func)
+{
+  internal::set_from_triplets<InputIterators, SparseMatrix<Scalar,_Options,_Index>, DupFunctor>(begin, end, *this, dup_func);
+}
+
+/** \internal */
+template<typename Scalar, int _Options, typename _Index>
+template<typename DupFunctor>
+void SparseMatrix<Scalar,_Options,_Index>::collapseDuplicates(DupFunctor dup_func)
+{
+  eigen_assert(!isCompressed());
+  // TODO, in practice we should be able to use m_innerNonZeros for that task
+  IndexVector wi(innerSize());
+  wi.fill(-1);
+  StorageIndex count = 0;
+  // for each inner-vector, wi[inner_index] will hold the position of first element into the index/value buffers
+  for(Index j=0; j<outerSize(); ++j)
+  {
+    StorageIndex start   = count;
+    Index oldEnd  = m_outerIndex[j]+m_innerNonZeros[j];
+    for(Index k=m_outerIndex[j]; k<oldEnd; ++k)
+    {
+      Index i = m_data.index(k);
+      if(wi(i)>=start)
+      {
+        // we already meet this entry => accumulate it
+        m_data.value(wi(i)) = dup_func(m_data.value(wi(i)), m_data.value(k));
+      }
+      else
+      {
+        m_data.value(count) = m_data.value(k);
+        m_data.index(count) = m_data.index(k);
+        wi(i) = count;
+        ++count;
+      }
+    }
+    m_outerIndex[j] = start;
+  }
+  m_outerIndex[m_outerSize] = count;
+
+  // turn the matrix into compressed form
+  std::free(m_innerNonZeros);
+  m_innerNonZeros = 0;
+  m_data.resize(m_outerIndex[m_outerSize]);
+}
+
+template<typename Scalar, int _Options, typename _Index>
+template<typename OtherDerived>
+EIGEN_DONT_INLINE SparseMatrix<Scalar,_Options,_Index>& SparseMatrix<Scalar,_Options,_Index>::operator=(const SparseMatrixBase<OtherDerived>& other)
+{
+  EIGEN_STATIC_ASSERT((internal::is_same<Scalar, typename OtherDerived::Scalar>::value),
+        YOU_MIXED_DIFFERENT_NUMERIC_TYPES__YOU_NEED_TO_USE_THE_CAST_METHOD_OF_MATRIXBASE_TO_CAST_NUMERIC_TYPES_EXPLICITLY)
+
+  #ifdef EIGEN_SPARSE_CREATE_TEMPORARY_PLUGIN
+    EIGEN_SPARSE_CREATE_TEMPORARY_PLUGIN
+  #endif
+      
+  const bool needToTranspose = (Flags & RowMajorBit) != (internal::evaluator<OtherDerived>::Flags & RowMajorBit);
+  if (needToTranspose)
+  {
+    #ifdef EIGEN_SPARSE_TRANSPOSED_COPY_PLUGIN
+      EIGEN_SPARSE_TRANSPOSED_COPY_PLUGIN
+    #endif
+    // two passes algorithm:
+    //  1 - compute the number of coeffs per dest inner vector
+    //  2 - do the actual copy/eval
+    /
