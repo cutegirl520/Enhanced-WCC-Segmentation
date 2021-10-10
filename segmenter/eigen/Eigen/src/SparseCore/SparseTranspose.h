@@ -91,4 +91,14 @@ struct unary_evaluator<Transpose<ArgType>, IteratorBased>
       Flags = XprType::Flags
     };
     
-    explicit unary_evaluator(
+    explicit unary_evaluator(const XprType& op) :m_argImpl(op.nestedExpression()) {}
+
+  protected:
+    evaluator<ArgType> m_argImpl;
+};
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif // EIGEN_SPARSETRANSPOSE_H
