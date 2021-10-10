@@ -273,4 +273,111 @@ template<typename Derived> class SparseMatrixBase
     template<typename OtherDerived>
     const Product<Derived,OtherDerived>
     operator*(const DiagonalBase<OtherDerived> &other) const
-    { return Product<Derived,OtherDerived>(derived(), other.derived())
+    { return Product<Derived,OtherDerived>(derived(), other.derived()); }
+
+    // diagonal * sparse
+    template<typename OtherDerived> friend
+    const Product<OtherDerived,Derived>
+    operator*(const DiagonalBase<OtherDerived> &lhs, const SparseMatrixBase& rhs)
+    { return Product<OtherDerived,Derived>(lhs.derived(), rhs.derived()); }
+    
+    // sparse * sparse
+    template<typename OtherDerived>
+    const Product<Derived,OtherDerived,AliasFreeProduct>
+    operator*(const SparseMatrixBase<OtherDerived> &other) const;
+    
+    // sparse * dense
+    template<typename OtherDerived>
+    const Product<Derived,OtherDerived>
+    operator*(const MatrixBase<OtherDerived> &other) const
+    { return Product<Derived,OtherDerived>(derived(), other.derived()); }
+    
+    // dense * sparse
+    template<typename OtherDerived> friend
+    const Product<OtherDerived,Derived>
+    operator*(const MatrixBase<OtherDerived> &lhs, const SparseMatrixBase& rhs)
+    { return Product<OtherDerived,Derived>(lhs.derived(), rhs.derived()); }
+    
+     /** \returns an expression of P H P^-1 where H is the matrix represented by \c *this */
+    SparseSymmetricPermutationProduct<Derived,Upper|Lower> twistedBy(const PermutationMatrix<Dynamic,Dynamic,StorageIndex>& perm) const
+    {
+      return SparseSymmetricPermutationProduct<Derived,Upper|Lower>(derived(), perm);
+    }
+
+    template<typename OtherDerived>
+    Derived& operator*=(const SparseMatrixBase<OtherDerived>& other);
+
+    template<int Mode>
+    inline const TriangularView<const Derived, Mode> triangularView() const;
+    
+    template<unsigned int UpLo> struct SelfAdjointViewReturnType { typedef SparseSelfAdjointView<Derived, UpLo> Type; };
+    template<unsigned int UpLo> struct ConstSelfAdjointViewReturnType { typedef const SparseSelfAdjointView<const Derived, UpLo> Type; };
+
+    template<unsigned int UpLo> inline 
+    typename ConstSelfAdjointViewReturnType<UpLo>::Type selfadjointView() const;
+    template<unsigned int UpLo> inline
+    typename SelfAdjointViewReturnType<UpLo>::Type selfadjointView();
+
+    template<typename OtherDerived> Scalar dot(const MatrixBase<OtherDerived>& other) const;
+    template<typename OtherDerived> Scalar dot(const SparseMatrixBase<OtherDerived>& other) const;
+    RealScalar squaredNorm() const;
+    RealScalar norm()  const;
+    RealScalar blueNorm() const;
+
+    TransposeReturnType transpose() { return TransposeReturnType(derived()); }
+    const ConstTransposeReturnType transpose() const { return ConstTransposeReturnType(derived()); }
+    const AdjointReturnType adjoint() const { return AdjointReturnType(transpose()); }
+
+    // inner-vector
+    typedef Block<Derived,IsRowMajor?1:Dynamic,IsRowMajor?Dynamic:1,true>       InnerVectorReturnType;
+    typedef Block<const Derived,IsRowMajor?1:Dynamic,IsRowMajor?Dynamic:1,true> ConstInnerVectorReturnType;
+    InnerVectorReturnType innerVector(Index outer);
+    const ConstInnerVectorReturnType innerVector(Index outer) const;
+
+    // set of inner-vectors
+    typedef Block<Derived,Dynamic,Dynamic,true> InnerVectorsReturnType;
+    typedef Block<const Derived,Dynamic,Dynamic,true> ConstInnerVectorsReturnType;
+    InnerVectorsReturnType innerVectors(Index outerStart, Index outerSize);
+    const ConstInnerVectorsReturnType innerVectors(Index outerStart, Index outerSize) const;
+
+    DenseMatrixType toDense() const
+    {
+      return DenseMatrixType(derived());
+    }
+
+    template<typename OtherDerived>
+    bool isApprox(const SparseMatrixBase<OtherDerived>& other,
+                  const RealScalar& prec = NumTraits<Scalar>::dummy_precision()) const;
+
+    template<typename OtherDerived>
+    bool isApprox(const MatrixBase<OtherDerived>& other,
+                  const RealScalar& prec = NumTraits<Scalar>::dummy_precision()) const
+    { return toDense().isApprox(other,prec); }
+
+    /** \returns the matrix or vector obtained by evaluating this expression.
+      *
+      * Notice that in the case of a plain matrix or vector (not an expression) this function just returns
+      * a const reference, in order to avoid a useless copy.
+      */
+    inline const typename internal::eval<Derived>::type eval() const
+    { return typename internal::eval<Derived>::type(derived()); }
+
+    Scalar sum() const;
+    
+    inline const SparseView<Derived>
+    pruned(const Scalar& reference = Scalar(0), const RealScalar& epsilon = NumTraits<Scalar>::dummy_precision()) const;
+
+  protected:
+
+    bool m_isRValue;
+
+    static inline StorageIndex convert_index(const Index idx) {
+      return internal::convert_index<StorageIndex>(idx);
+    }
+  private:
+    template<typename Dest> void evalTo(Dest &) const;
+};
+
+} // end namespace Eigen
+
+#endif // EIGEN_SPARSEMATRIXBASE_H
