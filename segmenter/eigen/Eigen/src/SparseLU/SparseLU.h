@@ -313,4 +313,330 @@ class SparseLU : public SparseSolverBase<SparseLU<_MatrixType,_OrderingType> >, 
       Index det = 1;
       // Note that the diagonal blocks of U are stored in supernodes,
       // which are available in the  L part :)
-      for (Index j = 0; j < this
+      for (Index j = 0; j < this->cols(); ++j)
+      {
+        for (typename SCMatrix::InnerIterator it(m_Lstore, j); it; ++it)
+        {
+          if(it.index() == j)
+          {
+            if(it.value()<0)
+              det = -det;
+            else if(it.value()==0)
+              return 0;
+            break;
+          }
+        }
+      }
+      return det * m_detPermR * m_detPermC;
+    }
+    
+    /** \returns The determinant of the matrix.
+      *
+      * \sa absDeterminant(), logAbsDeterminant()
+      */
+    Scalar determinant()
+    {
+      eigen_assert(m_factorizationIsOk && "The matrix should be factorized first.");
+      // Initialize with the determinant of the row matrix
+      Scalar det = Scalar(1.);
+      // Note that the diagonal blocks of U are stored in supernodes,
+      // which are available in the  L part :)
+      for (Index j = 0; j < this->cols(); ++j)
+      {
+        for (typename SCMatrix::InnerIterator it(m_Lstore, j); it; ++it)
+        {
+          if(it.index() == j)
+          {
+            det *= it.value();
+            break;
+          }
+        }
+      }
+      return (m_detPermR * m_detPermC) > 0 ? det : -det;
+    }
+
+  protected:
+    // Functions 
+    void initperfvalues()
+    {
+      m_perfv.panel_size = 16;
+      m_perfv.relax = 1; 
+      m_perfv.maxsuper = 128; 
+      m_perfv.rowblk = 16; 
+      m_perfv.colblk = 8; 
+      m_perfv.fillfactor = 20;  
+    }
+      
+    // Variables 
+    mutable ComputationInfo m_info;
+    bool m_factorizationIsOk;
+    bool m_analysisIsOk;
+    std::string m_lastError;
+    NCMatrix m_mat; // The input (permuted ) matrix 
+    SCMatrix m_Lstore; // The lower triangular matrix (supernodal)
+    MappedSparseMatrix<Scalar,ColMajor,StorageIndex> m_Ustore; // The upper triangular matrix
+    PermutationType m_perm_c; // Column permutation 
+    PermutationType m_perm_r ; // Row permutation
+    IndexVector m_etree; // Column elimination tree 
+    
+    typename Base::GlobalLU_t m_glu; 
+                               
+    // SparseLU options 
+    bool m_symmetricmode;
+    // values for performance 
+    internal::perfvalues m_perfv;
+    RealScalar m_diagpivotthresh; // Specifies the threshold used for a diagonal entry to be an acceptable pivot
+    Index m_nnzL, m_nnzU; // Nonzeros in L and U factors
+    Index m_detPermR, m_detPermC; // Determinants of the permutation matrices
+  private:
+    // Disable copy constructor 
+    SparseLU (const SparseLU& );
+  
+}; // End class SparseLU
+
+
+
+// Functions needed by the anaysis phase
+/** 
+  * Compute the column permutation to minimize the fill-in
+  * 
+  *  - Apply this permutation to the input matrix - 
+  * 
+  *  - Compute the column elimination tree on the permuted matrix 
+  * 
+  *  - Postorder the elimination tree and the column permutation
+  * 
+  */
+template <typename MatrixType, typename OrderingType>
+void SparseLU<MatrixType, OrderingType>::analyzePattern(const MatrixType& mat)
+{
+  
+  //TODO  It is possible as in SuperLU to compute row and columns scaling vectors to equilibrate the matrix mat.
+  
+  // Firstly, copy the whole input matrix. 
+  m_mat = mat;
+  
+  // Compute fill-in ordering
+  OrderingType ord; 
+  ord(m_mat,m_perm_c);
+  
+  // Apply the permutation to the column of the input  matrix
+  if (m_perm_c.size())
+  {
+    m_mat.uncompress(); //NOTE: The effect of this command is only to create the InnerNonzeros pointers. FIXME : This vector is filled but not subsequently used.  
+    // Then, permute only the column pointers
+    ei_declare_aligned_stack_constructed_variable(StorageIndex,outerIndexPtr,mat.cols()+1,mat.isCompressed()?const_cast<StorageIndex*>(mat.outerIndexPtr()):0);
+    
+    // If the input matrix 'mat' is uncompressed, then the outer-indices do not match the ones of m_mat, and a copy is thus needed.
+    if(!mat.isCompressed()) 
+      IndexVector::Map(outerIndexPtr, mat.cols()+1) = IndexVector::Map(m_mat.outerIndexPtr(),mat.cols()+1);
+    
+    // Apply the permutation and compute the nnz per column.
+    for (Index i = 0; i < mat.cols(); i++)
+    {
+      m_mat.outerIndexPtr()[m_perm_c.indices()(i)] = outerIndexPtr[i];
+      m_mat.innerNonZeroPtr()[m_perm_c.indices()(i)] = outerIndexPtr[i+1] - outerIndexPtr[i];
+    }
+  }
+  
+  // Compute the column elimination tree of the permuted matrix 
+  IndexVector firstRowElt;
+  internal::coletree(m_mat, m_etree,firstRowElt); 
+     
+  // In symmetric mode, do not do postorder here
+  if (!m_symmetricmode) {
+    IndexVector post, iwork; 
+    // Post order etree
+    internal::treePostorder(StorageIndex(m_mat.cols()), m_etree, post); 
+      
+   
+    // Renumber etree in postorder 
+    Index m = m_mat.cols(); 
+    iwork.resize(m+1);
+    for (Index i = 0; i < m; ++i) iwork(post(i)) = post(m_etree(i));
+    m_etree = iwork;
+    
+    // Postmultiply A*Pc by post, i.e reorder the matrix according to the postorder of the etree
+    PermutationType post_perm(m); 
+    for (Index i = 0; i < m; i++) 
+      post_perm.indices()(i) = post(i); 
+        
+    // Combine the two permutations : postorder the permutation for future use
+    if(m_perm_c.size()) {
+      m_perm_c = post_perm * m_perm_c;
+    }
+    
+  } // end postordering 
+  
+  m_analysisIsOk = true; 
+}
+
+// Functions needed by the numerical factorization phase
+
+
+/** 
+  *  - Numerical factorization 
+  *  - Interleaved with the symbolic factorization 
+  * On exit,  info is 
+  * 
+  *    = 0: successful factorization
+  * 
+  *    > 0: if info = i, and i is
+  * 
+  *       <= A->ncol: U(i,i) is exactly zero. The factorization has
+  *          been completed, but the factor U is exactly singular,
+  *          and division by zero will occur if it is used to solve a
+  *          system of equations.
+  * 
+  *       > A->ncol: number of bytes allocated when memory allocation
+  *         failure occurred, plus A->ncol. If lwork = -1, it is
+  *         the estimated amount of space needed, plus A->ncol.  
+  */
+template <typename MatrixType, typename OrderingType>
+void SparseLU<MatrixType, OrderingType>::factorize(const MatrixType& matrix)
+{
+  using internal::emptyIdxLU;
+  eigen_assert(m_analysisIsOk && "analyzePattern() should be called first"); 
+  eigen_assert((matrix.rows() == matrix.cols()) && "Only for squared matrices");
+  
+  typedef typename IndexVector::Scalar StorageIndex; 
+  
+  m_isInitialized = true;
+  
+  
+  // Apply the column permutation computed in analyzepattern()
+  //   m_mat = matrix * m_perm_c.inverse(); 
+  m_mat = matrix;
+  if (m_perm_c.size()) 
+  {
+    m_mat.uncompress(); //NOTE: The effect of this command is only to create the InnerNonzeros pointers.
+    //Then, permute only the column pointers
+    const StorageIndex * outerIndexPtr;
+    if (matrix.isCompressed()) outerIndexPtr = matrix.outerIndexPtr();
+    else
+    {
+      StorageIndex* outerIndexPtr_t = new StorageIndex[matrix.cols()+1];
+      for(Index i = 0; i <= matrix.cols(); i++) outerIndexPtr_t[i] = m_mat.outerIndexPtr()[i];
+      outerIndexPtr = outerIndexPtr_t;
+    }
+    for (Index i = 0; i < matrix.cols(); i++)
+    {
+      m_mat.outerIndexPtr()[m_perm_c.indices()(i)] = outerIndexPtr[i];
+      m_mat.innerNonZeroPtr()[m_perm_c.indices()(i)] = outerIndexPtr[i+1] - outerIndexPtr[i];
+    }
+    if(!matrix.isCompressed()) delete[] outerIndexPtr;
+  } 
+  else 
+  { //FIXME This should not be needed if the empty permutation is handled transparently
+    m_perm_c.resize(matrix.cols());
+    for(StorageIndex i = 0; i < matrix.cols(); ++i) m_perm_c.indices()(i) = i;
+  }
+  
+  Index m = m_mat.rows();
+  Index n = m_mat.cols();
+  Index nnz = m_mat.nonZeros();
+  Index maxpanel = m_perfv.panel_size * m;
+  // Allocate working storage common to the factor routines
+  Index lwork = 0;
+  Index info = Base::memInit(m, n, nnz, lwork, m_perfv.fillfactor, m_perfv.panel_size, m_glu); 
+  if (info) 
+  {
+    m_lastError = "UNABLE TO ALLOCATE WORKING MEMORY\n\n" ;
+    m_factorizationIsOk = false;
+    return ; 
+  }
+  
+  // Set up pointers for integer working arrays 
+  IndexVector segrep(m); segrep.setZero();
+  IndexVector parent(m); parent.setZero();
+  IndexVector xplore(m); xplore.setZero();
+  IndexVector repfnz(maxpanel);
+  IndexVector panel_lsub(maxpanel);
+  IndexVector xprune(n); xprune.setZero();
+  IndexVector marker(m*internal::LUNoMarker); marker.setZero();
+  
+  repfnz.setConstant(-1); 
+  panel_lsub.setConstant(-1);
+  
+  // Set up pointers for scalar working arrays 
+  ScalarVector dense; 
+  dense.setZero(maxpanel);
+  ScalarVector tempv; 
+  tempv.setZero(internal::LUnumTempV(m, m_perfv.panel_size, m_perfv.maxsuper, /*m_perfv.rowblk*/m) );
+  
+  // Compute the inverse of perm_c
+  PermutationType iperm_c(m_perm_c.inverse()); 
+  
+  // Identify initial relaxed snodes
+  IndexVector relax_end(n);
+  if ( m_symmetricmode == true ) 
+    Base::heap_relax_snode(n, m_etree, m_perfv.relax, marker, relax_end);
+  else
+    Base::relax_snode(n, m_etree, m_perfv.relax, marker, relax_end);
+  
+  
+  m_perm_r.resize(m); 
+  m_perm_r.indices().setConstant(-1);
+  marker.setConstant(-1);
+  m_detPermR = 1; // Record the determinant of the row permutation
+  
+  m_glu.supno(0) = emptyIdxLU; m_glu.xsup.setConstant(0);
+  m_glu.xsup(0) = m_glu.xlsub(0) = m_glu.xusub(0) = m_glu.xlusup(0) = Index(0);
+  
+  // Work on one 'panel' at a time. A panel is one of the following :
+  //  (a) a relaxed supernode at the bottom of the etree, or
+  //  (b) panel_size contiguous columns, <panel_size> defined by the user
+  Index jcol; 
+  IndexVector panel_histo(n);
+  Index pivrow; // Pivotal row number in the original row matrix
+  Index nseg1; // Number of segments in U-column above panel row jcol
+  Index nseg; // Number of segments in each U-column 
+  Index irep; 
+  Index i, k, jj; 
+  for (jcol = 0; jcol < n; )
+  {
+    // Adjust panel size so that a panel won't overlap with the next relaxed snode. 
+    Index panel_size = m_perfv.panel_size; // upper bound on panel width
+    for (k = jcol + 1; k < (std::min)(jcol+panel_size, n); k++)
+    {
+      if (relax_end(k) != emptyIdxLU) 
+      {
+        panel_size = k - jcol; 
+        break; 
+      }
+    }
+    if (k == n) 
+      panel_size = n - jcol; 
+      
+    // Symbolic outer factorization on a panel of columns 
+    Base::panel_dfs(m, panel_size, jcol, m_mat, m_perm_r.indices(), nseg1, dense, panel_lsub, segrep, repfnz, xprune, marker, parent, xplore, m_glu); 
+    
+    // Numeric sup-panel updates in topological order 
+    Base::panel_bmod(m, panel_size, jcol, nseg1, dense, tempv, segrep, repfnz, m_glu); 
+    
+    // Sparse LU within the panel, and below the panel diagonal 
+    for ( jj = jcol; jj< jcol + panel_size; jj++) 
+    {
+      k = (jj - jcol) * m; // Column index for w-wide arrays 
+      
+      nseg = nseg1; // begin after all the panel segments
+      //Depth-first-search for the current column
+      VectorBlock<IndexVector> panel_lsubk(panel_lsub, k, m);
+      VectorBlock<IndexVector> repfnz_k(repfnz, k, m); 
+      info = Base::column_dfs(m, jj, m_perm_r.indices(), m_perfv.maxsuper, nseg, panel_lsubk, segrep, repfnz_k, xprune, marker, parent, xplore, m_glu); 
+      if ( info ) 
+      {
+        m_lastError =  "UNABLE TO EXPAND MEMORY IN COLUMN_DFS() ";
+        m_info = NumericalIssue; 
+        m_factorizationIsOk = false; 
+        return; 
+      }
+      // Numeric updates to this column 
+      VectorBlock<ScalarVector> dense_k(dense, k, m); 
+      VectorBlock<IndexVector> segrep_k(segrep, nseg1, m-nseg1); 
+      info = Base::column_bmod(jj, (nseg - nseg1), dense_k, tempv, segrep_k, repfnz_k, jcol, m_glu); 
+      if ( info ) 
+      {
+        m_lastError = "UNABLE TO EXPAND MEMORY IN COLUMN_BMOD() ";
+        m_info = NumericalIssue; 
+        m_factorizatio
