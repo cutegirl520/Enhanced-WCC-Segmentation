@@ -639,4 +639,137 @@ void SparseLU<MatrixType, OrderingType>::factorize(const MatrixType& matrix)
       {
         m_lastError = "UNABLE TO EXPAND MEMORY IN COLUMN_BMOD() ";
         m_info = NumericalIssue; 
-        m_factorizatio
+        m_factorizationIsOk = false; 
+        return; 
+      }
+      
+      // Copy the U-segments to ucol(*)
+      info = Base::copy_to_ucol(jj, nseg, segrep, repfnz_k ,m_perm_r.indices(), dense_k, m_glu); 
+      if ( info ) 
+      {
+        m_lastError = "UNABLE TO EXPAND MEMORY IN COPY_TO_UCOL() ";
+        m_info = NumericalIssue; 
+        m_factorizationIsOk = false; 
+        return; 
+      }
+      
+      // Form the L-segment 
+      info = Base::pivotL(jj, m_diagpivotthresh, m_perm_r.indices(), iperm_c.indices(), pivrow, m_glu);
+      if ( info ) 
+      {
+        m_lastError = "THE MATRIX IS STRUCTURALLY SINGULAR ... ZERO COLUMN AT ";
+        std::ostringstream returnInfo;
+        returnInfo << info; 
+        m_lastError += returnInfo.str();
+        m_info = NumericalIssue; 
+        m_factorizationIsOk = false; 
+        return; 
+      }
+      
+      // Update the determinant of the row permutation matrix
+      // FIXME: the following test is not correct, we should probably take iperm_c into account and pivrow is not directly the row pivot.
+      if (pivrow != jj) m_detPermR = -m_detPermR;
+
+      // Prune columns (0:jj-1) using column jj
+      Base::pruneL(jj, m_perm_r.indices(), pivrow, nseg, segrep, repfnz_k, xprune, m_glu); 
+      
+      // Reset repfnz for this column 
+      for (i = 0; i < nseg; i++)
+      {
+        irep = segrep(i); 
+        repfnz_k(irep) = emptyIdxLU; 
+      }
+    } // end SparseLU within the panel  
+    jcol += panel_size;  // Move to the next panel
+  } // end for -- end elimination 
+  
+  m_detPermR = m_perm_r.determinant();
+  m_detPermC = m_perm_c.determinant();
+  
+  // Count the number of nonzeros in factors 
+  Base::countnz(n, m_nnzL, m_nnzU, m_glu); 
+  // Apply permutation  to the L subscripts 
+  Base::fixupL(n, m_perm_r.indices(), m_glu);
+  
+  // Create supernode matrix L 
+  m_Lstore.setInfos(m, n, m_glu.lusup, m_glu.xlusup, m_glu.lsub, m_glu.xlsub, m_glu.supno, m_glu.xsup); 
+  // Create the column major upper sparse matrix  U; 
+  new (&m_Ustore) MappedSparseMatrix<Scalar, ColMajor, StorageIndex> ( m, n, m_nnzU, m_glu.xusub.data(), m_glu.usub.data(), m_glu.ucol.data() );
+  
+  m_info = Success;
+  m_factorizationIsOk = true;
+}
+
+template<typename MappedSupernodalType>
+struct SparseLUMatrixLReturnType : internal::no_assignment_operator
+{
+  typedef typename MappedSupernodalType::Scalar Scalar;
+  explicit SparseLUMatrixLReturnType(const MappedSupernodalType& mapL) : m_mapL(mapL)
+  { }
+  Index rows() { return m_mapL.rows(); }
+  Index cols() { return m_mapL.cols(); }
+  template<typename Dest>
+  void solveInPlace( MatrixBase<Dest> &X) const
+  {
+    m_mapL.solveInPlace(X);
+  }
+  const MappedSupernodalType& m_mapL;
+};
+
+template<typename MatrixLType, typename MatrixUType>
+struct SparseLUMatrixUReturnType : internal::no_assignment_operator
+{
+  typedef typename MatrixLType::Scalar Scalar;
+  SparseLUMatrixUReturnType(const MatrixLType& mapL, const MatrixUType& mapU)
+  : m_mapL(mapL),m_mapU(mapU)
+  { }
+  Index rows() { return m_mapL.rows(); }
+  Index cols() { return m_mapL.cols(); }
+
+  template<typename Dest>   void solveInPlace(MatrixBase<Dest> &X) const
+  {
+    Index nrhs = X.cols();
+    Index n    = X.rows();
+    // Backward solve with U
+    for (Index k = m_mapL.nsuper(); k >= 0; k--)
+    {
+      Index fsupc = m_mapL.supToCol()[k];
+      Index lda = m_mapL.colIndexPtr()[fsupc+1] - m_mapL.colIndexPtr()[fsupc]; // leading dimension
+      Index nsupc = m_mapL.supToCol()[k+1] - fsupc;
+      Index luptr = m_mapL.colIndexPtr()[fsupc];
+
+      if (nsupc == 1)
+      {
+        for (Index j = 0; j < nrhs; j++)
+        {
+          X(fsupc, j) /= m_mapL.valuePtr()[luptr];
+        }
+      }
+      else
+      {
+        Map<const Matrix<Scalar,Dynamic,Dynamic, ColMajor>, 0, OuterStride<> > A( &(m_mapL.valuePtr()[luptr]), nsupc, nsupc, OuterStride<>(lda) );
+        Map< Matrix<Scalar,Dynamic,Dynamic, ColMajor>, 0, OuterStride<> > U (&(X(fsupc,0)), nsupc, nrhs, OuterStride<>(n) );
+        U = A.template triangularView<Upper>().solve(U);
+      }
+
+      for (Index j = 0; j < nrhs; ++j)
+      {
+        for (Index jcol = fsupc; jcol < fsupc + nsupc; jcol++)
+        {
+          typename MatrixUType::InnerIterator it(m_mapU, jcol);
+          for ( ; it; ++it)
+          {
+            Index irow = it.index();
+            X(irow, j) -= X(jcol, j) * it.value();
+          }
+        }
+      }
+    } // End For U-solve
+  }
+  const MatrixLType& m_mapL;
+  const MatrixUType& m_mapU;
+};
+
+} // End namespace Eigen 
+
+#endif
