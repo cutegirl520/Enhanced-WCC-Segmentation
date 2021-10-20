@@ -104,4 +104,78 @@ Index SparseLUImpl<Scalar,StorageIndex>::column_bmod(const Index jcol, const Ind
       no_zeros = kfnz - fst_col; 
       if(segsize==1)
         LU_kernel_bmod<1>::run(segsize, dense, tempv, glu.lusup, luptr, lda, nrow, glu.lsub, lptr, no_zeros);
-      el
+      else
+        LU_kernel_bmod<Dynamic>::run(segsize, dense, tempv, glu.lusup, luptr, lda, nrow, glu.lsub, lptr, no_zeros);
+    } // end if jsupno 
+  } // end for each segment
+  
+  // Process the supernodal portion of  L\U[*,j]
+  nextlu = glu.xlusup(jcol); 
+  fsupc = glu.xsup(jsupno);
+  
+  // copy the SPA dense into L\U[*,j]
+  Index mem; 
+  new_next = nextlu + glu.xlsub(fsupc + 1) - glu.xlsub(fsupc); 
+  Index offset = internal::first_multiple<Index>(new_next, internal::packet_traits<Scalar>::size) - new_next;
+  if(offset)
+    new_next += offset;
+  while (new_next > glu.nzlumax )
+  {
+    mem = memXpand<ScalarVector>(glu.lusup, glu.nzlumax, nextlu, LUSUP, glu.num_expansions);  
+    if (mem) return mem; 
+  }
+  
+  for (isub = glu.xlsub(fsupc); isub < glu.xlsub(fsupc+1); isub++)
+  {
+    irow = glu.lsub(isub);
+    glu.lusup(nextlu) = dense(irow);
+    dense(irow) = Scalar(0.0); 
+    ++nextlu; 
+  }
+  
+  if(offset)
+  {
+    glu.lusup.segment(nextlu,offset).setZero();
+    nextlu += offset;
+  }
+  glu.xlusup(jcol + 1) = StorageIndex(nextlu);  // close L\U(*,jcol); 
+  
+  /* For more updates within the panel (also within the current supernode),
+   * should start from the first column of the panel, or the first column
+   * of the supernode, whichever is bigger. There are two cases:
+   *  1) fsupc < fpanelc, then fst_col <-- fpanelc
+   *  2) fsupc >= fpanelc, then fst_col <-- fsupc
+   */
+  fst_col = (std::max)(fsupc, fpanelc); 
+  
+  if (fst_col  < jcol)
+  {
+    // Distance between the current supernode and the current panel
+    // d_fsupc = 0 if fsupc >= fpanelc
+    d_fsupc = fst_col - fsupc; 
+    
+    lptr = glu.xlsub(fsupc) + d_fsupc; 
+    luptr = glu.xlusup(fst_col) + d_fsupc; 
+    nsupr = glu.xlsub(fsupc+1) - glu.xlsub(fsupc); // leading dimension
+    nsupc = jcol - fst_col; // excluding jcol 
+    nrow = nsupr - d_fsupc - nsupc; 
+    
+    // points to the beginning of jcol in snode L\U(jsupno) 
+    ufirst = glu.xlusup(jcol) + d_fsupc; 
+    Index lda = glu.xlusup(jcol+1) - glu.xlusup(jcol);
+    MappedMatrixBlock A( &(glu.lusup.data()[luptr]), nsupc, nsupc, OuterStride<>(lda) );
+    VectorBlock<ScalarVector> u(glu.lusup, ufirst, nsupc); 
+    u = A.template triangularView<UnitLower>().solve(u); 
+    
+    new (&A) MappedMatrixBlock ( &(glu.lusup.data()[luptr+nsupc]), nrow, nsupc, OuterStride<>(lda) );
+    VectorBlock<ScalarVector> l(glu.lusup, ufirst+nsupc, nrow); 
+    l.noalias() -= A * u;
+    
+  } // End if fst_col
+  return 0; 
+}
+
+} // end namespace internal
+} // end namespace Eigen
+
+#endif // SPARSELU_COLUMN_BMOD_H
