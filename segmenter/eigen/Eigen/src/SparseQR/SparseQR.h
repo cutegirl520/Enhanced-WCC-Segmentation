@@ -446,4 +446,294 @@ void SparseQR<MatrixType,OrderingType>::factorize(const MatrixType& mat)
       for (; mark(st) != col; st = m_etree(st))
       {
         Ridx(nzcolR) = st;  // Add this row to the list,
-        mark(st) = col;     // and 
+        mark(st) = col;     // and mark this row as visited
+        nzcolR++;
+      }
+
+      // Reverse the list to get the topological ordering
+      Index nt = nzcolR-bi;
+      for(Index i = 0; i < nt/2; i++) std::swap(Ridx(bi+i), Ridx(nzcolR-i-1));
+       
+      // Copy the current (curIdx,pcol) value of the input matrix
+      if(itp) tval(curIdx) = itp.value();
+      else    tval(curIdx) = Scalar(0);
+      
+      // Compute the pattern of Q(:,k)
+      if(curIdx > nonzeroCol && mark(curIdx) != col ) 
+      {
+        Qidx(nzcolQ) = curIdx;  // Add this row to the pattern of Q,
+        mark(curIdx) = col;     // and mark it as visited
+        nzcolQ++;
+      }
+    }
+
+    // Browse all the indexes of R(:,col) in reverse order
+    for (Index i = nzcolR-1; i >= 0; i--)
+    {
+      Index curIdx = Ridx(i);
+      
+      // Apply the curIdx-th householder vector to the current column (temporarily stored into tval)
+      Scalar tdot(0);
+      
+      // First compute q' * tval
+      tdot = m_Q.col(curIdx).dot(tval);
+
+      tdot *= m_hcoeffs(curIdx);
+      
+      // Then update tval = tval - q * tau
+      // FIXME: tval -= tdot * m_Q.col(curIdx) should amount to the same (need to check/add support for efficient "dense ?= sparse")
+      for (typename QRMatrixType::InnerIterator itq(m_Q, curIdx); itq; ++itq)
+        tval(itq.row()) -= itq.value() * tdot;
+
+      // Detect fill-in for the current column of Q
+      if(m_etree(Ridx(i)) == nonzeroCol)
+      {
+        for (typename QRMatrixType::InnerIterator itq(m_Q, curIdx); itq; ++itq)
+        {
+          StorageIndex iQ = StorageIndex(itq.row());
+          if (mark(iQ) != col)
+          {
+            Qidx(nzcolQ++) = iQ;  // Add this row to the pattern of Q,
+            mark(iQ) = col;       // and mark it as visited
+          }
+        }
+      }
+    } // End update current column
+    
+    Scalar tau = RealScalar(0);
+    RealScalar beta = 0;
+    
+    if(nonzeroCol < diagSize)
+    {
+      // Compute the Householder reflection that eliminate the current column
+      // FIXME this step should call the Householder module.
+      Scalar c0 = nzcolQ ? tval(Qidx(0)) : Scalar(0);
+      
+      // First, the squared norm of Q((col+1):m, col)
+      RealScalar sqrNorm = 0.;
+      for (Index itq = 1; itq < nzcolQ; ++itq) sqrNorm += numext::abs2(tval(Qidx(itq)));
+      if(sqrNorm == RealScalar(0) && numext::imag(c0) == RealScalar(0))
+      {
+        beta = numext::real(c0);
+        tval(Qidx(0)) = 1;
+      }
+      else
+      {
+        using std::sqrt;
+        beta = sqrt(numext::abs2(c0) + sqrNorm);
+        if(numext::real(c0) >= RealScalar(0))
+          beta = -beta;
+        tval(Qidx(0)) = 1;
+        for (Index itq = 1; itq < nzcolQ; ++itq)
+          tval(Qidx(itq)) /= (c0 - beta);
+        tau = numext::conj((beta-c0) / beta);
+          
+      }
+    }
+
+    // Insert values in R
+    for (Index  i = nzcolR-1; i >= 0; i--)
+    {
+      Index curIdx = Ridx(i);
+      if(curIdx < nonzeroCol) 
+      {
+        m_R.insertBackByOuterInnerUnordered(col, curIdx) = tval(curIdx);
+        tval(curIdx) = Scalar(0.);
+      }
+    }
+
+    if(nonzeroCol < diagSize && abs(beta) >= pivotThreshold)
+    {
+      m_R.insertBackByOuterInner(col, nonzeroCol) = beta;
+      // The householder coefficient
+      m_hcoeffs(nonzeroCol) = tau;
+      // Record the householder reflections
+      for (Index itq = 0; itq < nzcolQ; ++itq)
+      {
+        Index iQ = Qidx(itq);
+        m_Q.insertBackByOuterInnerUnordered(nonzeroCol,iQ) = tval(iQ);
+        tval(iQ) = Scalar(0.);
+      }
+      nonzeroCol++;
+      if(nonzeroCol<diagSize)
+        m_Q.startVec(nonzeroCol);
+    }
+    else
+    {
+      // Zero pivot found: move implicitly this column to the end
+      for (Index j = nonzeroCol; j < n-1; j++) 
+        std::swap(m_pivotperm.indices()(j), m_pivotperm.indices()[j+1]);
+      
+      // Recompute the column elimination tree
+      internal::coletree(m_pmat, m_etree, m_firstRowElt, m_pivotperm.indices().data());
+      m_isEtreeOk = false;
+    }
+  }
+  
+  m_hcoeffs.tail(diagSize-nonzeroCol).setZero();
+  
+  // Finalize the column pointers of the sparse matrices R and Q
+  m_Q.finalize();
+  m_Q.makeCompressed();
+  m_R.finalize();
+  m_R.makeCompressed();
+  m_isQSorted = false;
+
+  m_nonzeropivots = nonzeroCol;
+  
+  if(nonzeroCol<n)
+  {
+    // Permute the triangular factor to put the 'dead' columns to the end
+    QRMatrixType tempR(m_R);
+    m_R = tempR * m_pivotperm;
+    
+    // Update the column permutation
+    m_outputPerm_c = m_outputPerm_c * m_pivotperm;
+  }
+  
+  m_isInitialized = true; 
+  m_factorizationIsok = true;
+  m_info = Success;
+}
+
+template <typename SparseQRType, typename Derived>
+struct SparseQR_QProduct : ReturnByValue<SparseQR_QProduct<SparseQRType, Derived> >
+{
+  typedef typename SparseQRType::QRMatrixType MatrixType;
+  typedef typename SparseQRType::Scalar Scalar;
+  // Get the references 
+  SparseQR_QProduct(const SparseQRType& qr, const Derived& other, bool transpose) : 
+  m_qr(qr),m_other(other),m_transpose(transpose) {}
+  inline Index rows() const { return m_transpose ? m_qr.rows() : m_qr.cols(); }
+  inline Index cols() const { return m_other.cols(); }
+  
+  // Assign to a vector
+  template<typename DesType>
+  void evalTo(DesType& res) const
+  {
+    Index m = m_qr.rows();
+    Index n = m_qr.cols();
+    Index diagSize = (std::min)(m,n);
+    res = m_other;
+    if (m_transpose)
+    {
+      eigen_assert(m_qr.m_Q.rows() == m_other.rows() && "Non conforming object sizes");
+      //Compute res = Q' * other column by column
+      for(Index j = 0; j < res.cols(); j++){
+        for (Index k = 0; k < diagSize; k++)
+        {
+          Scalar tau = Scalar(0);
+          tau = m_qr.m_Q.col(k).dot(res.col(j));
+          if(tau==Scalar(0)) continue;
+          tau = tau * m_qr.m_hcoeffs(k);
+          res.col(j) -= tau * m_qr.m_Q.col(k);
+        }
+      }
+    }
+    else
+    {
+      eigen_assert(m_qr.m_Q.rows() == m_other.rows() && "Non conforming object sizes");
+      // Compute res = Q * other column by column
+      for(Index j = 0; j < res.cols(); j++)
+      {
+        for (Index k = diagSize-1; k >=0; k--)
+        {
+          Scalar tau = Scalar(0);
+          tau = m_qr.m_Q.col(k).dot(res.col(j));
+          if(tau==Scalar(0)) continue;
+          tau = tau * m_qr.m_hcoeffs(k);
+          res.col(j) -= tau * m_qr.m_Q.col(k);
+        }
+      }
+    }
+  }
+  
+  const SparseQRType& m_qr;
+  const Derived& m_other;
+  bool m_transpose;
+};
+
+template<typename SparseQRType>
+struct SparseQRMatrixQReturnType : public EigenBase<SparseQRMatrixQReturnType<SparseQRType> >
+{  
+  typedef typename SparseQRType::Scalar Scalar;
+  typedef Matrix<Scalar,Dynamic,Dynamic> DenseMatrix;
+  enum {
+    RowsAtCompileTime = Dynamic,
+    ColsAtCompileTime = Dynamic
+  };
+  explicit SparseQRMatrixQReturnType(const SparseQRType& qr) : m_qr(qr) {}
+  template<typename Derived>
+  SparseQR_QProduct<SparseQRType, Derived> operator*(const MatrixBase<Derived>& other)
+  {
+    return SparseQR_QProduct<SparseQRType,Derived>(m_qr,other.derived(),false);
+  }
+  SparseQRMatrixQTransposeReturnType<SparseQRType> adjoint() const
+  {
+    return SparseQRMatrixQTransposeReturnType<SparseQRType>(m_qr);
+  }
+  inline Index rows() const { return m_qr.rows(); }
+  inline Index cols() const { return (std::min)(m_qr.rows(),m_qr.cols()); }
+  // To use for operations with the transpose of Q
+  SparseQRMatrixQTransposeReturnType<SparseQRType> transpose() const
+  {
+    return SparseQRMatrixQTransposeReturnType<SparseQRType>(m_qr);
+  }
+  const SparseQRType& m_qr;
+};
+
+template<typename SparseQRType>
+struct SparseQRMatrixQTransposeReturnType
+{
+  explicit SparseQRMatrixQTransposeReturnType(const SparseQRType& qr) : m_qr(qr) {}
+  template<typename Derived>
+  SparseQR_QProduct<SparseQRType,Derived> operator*(const MatrixBase<Derived>& other)
+  {
+    return SparseQR_QProduct<SparseQRType,Derived>(m_qr,other.derived(), true);
+  }
+  const SparseQRType& m_qr;
+};
+
+namespace internal {
+  
+template<typename SparseQRType>
+struct evaluator_traits<SparseQRMatrixQReturnType<SparseQRType> >
+{
+  typedef typename SparseQRType::MatrixType MatrixType;
+  typedef typename storage_kind_to_evaluator_kind<typename MatrixType::StorageKind>::Kind Kind;
+  typedef SparseShape Shape;
+};
+
+template< typename DstXprType, typename SparseQRType>
+struct Assignment<DstXprType, SparseQRMatrixQReturnType<SparseQRType>, internal::assign_op<typename DstXprType::Scalar,typename DstXprType::Scalar>, Sparse2Sparse>
+{
+  typedef SparseQRMatrixQReturnType<SparseQRType> SrcXprType;
+  typedef typename DstXprType::Scalar Scalar;
+  typedef typename DstXprType::StorageIndex StorageIndex;
+  static void run(DstXprType &dst, const SrcXprType &src, const internal::assign_op<Scalar,Scalar> &/*func*/)
+  {
+    typename DstXprType::PlainObject idMat(src.m_qr.rows(), src.m_qr.rows());
+    idMat.setIdentity();
+    // Sort the sparse householder reflectors if needed
+    const_cast<SparseQRType *>(&src.m_qr)->_sort_matrix_Q();
+    dst = SparseQR_QProduct<SparseQRType, DstXprType>(src.m_qr, idMat, false);
+  }
+};
+
+template< typename DstXprType, typename SparseQRType>
+struct Assignment<DstXprType, SparseQRMatrixQReturnType<SparseQRType>, internal::assign_op<typename DstXprType::Scalar,typename DstXprType::Scalar>, Sparse2Dense>
+{
+  typedef SparseQRMatrixQReturnType<SparseQRType> SrcXprType;
+  typedef typename DstXprType::Scalar Scalar;
+  typedef typename DstXprType::StorageIndex StorageIndex;
+  static void run(DstXprType &dst, const SrcXprType &src, const internal::assign_op<Scalar,Scalar> &/*func*/)
+  {
+    dst = src.m_qr.matrixQ() * DstXprType::Identity(src.m_qr.rows(), src.m_qr.rows());
+  }
+};
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+#endif
