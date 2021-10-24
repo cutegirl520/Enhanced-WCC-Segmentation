@@ -166,4 +166,284 @@ class SparseQR : public SparseSolverBase<SparseQR<_MatrixType,_OrderingType> >
     * Q = SparseQR<SparseMatrix<double> >(A).matrixQ();
     * \endcode
     * Internally, this call simply performs a sparse product between the matrix Q
-    * and a sparse identity matrix. Howev
+    * and a sparse identity matrix. However, due to the fact that the sparse
+    * reflectors are stored unsorted, two transpositions are needed to sort
+    * them before performing the product.
+    */
+    SparseQRMatrixQReturnType<SparseQR> matrixQ() const 
+    { return SparseQRMatrixQReturnType<SparseQR>(*this); }
+    
+    /** \returns a const reference to the column permutation P that was applied to A such that A*P = Q*R
+      * It is the combination of the fill-in reducing permutation and numerical column pivoting.
+      */
+    const PermutationType& colsPermutation() const
+    { 
+      eigen_assert(m_isInitialized && "Decomposition is not initialized.");
+      return m_outputPerm_c;
+    }
+    
+    /** \returns A string describing the type of error.
+      * This method is provided to ease debugging, not to handle errors.
+      */
+    std::string lastErrorMessage() const { return m_lastError; }
+    
+    /** \internal */
+    template<typename Rhs, typename Dest>
+    bool _solve_impl(const MatrixBase<Rhs> &B, MatrixBase<Dest> &dest) const
+    {
+      eigen_assert(m_isInitialized && "The factorization should be called first, use compute()");
+      eigen_assert(this->rows() == B.rows() && "SparseQR::solve() : invalid number of rows in the right hand side matrix");
+
+      Index rank = this->rank();
+      
+      // Compute Q^T * b;
+      typename Dest::PlainObject y, b;
+      y = this->matrixQ().transpose() * B; 
+      b = y;
+      
+      // Solve with the triangular matrix R
+      y.resize((std::max<Index>)(cols(),y.rows()),y.cols());
+      y.topRows(rank) = this->matrixR().topLeftCorner(rank, rank).template triangularView<Upper>().solve(b.topRows(rank));
+      y.bottomRows(y.rows()-rank).setZero();
+      
+      // Apply the column permutation
+      if (m_perm_c.size())  dest = colsPermutation() * y.topRows(cols());
+      else                  dest = y.topRows(cols());
+      
+      m_info = Success;
+      return true;
+    }
+
+    /** Sets the threshold that is used to determine linearly dependent columns during the factorization.
+      *
+      * In practice, if during the factorization the norm of the column that has to be eliminated is below
+      * this threshold, then the entire column is treated as zero, and it is moved at the end.
+      */
+    void setPivotThreshold(const RealScalar& threshold)
+    {
+      m_useDefaultThreshold = false;
+      m_threshold = threshold;
+    }
+    
+    /** \returns the solution X of \f$ A X = B \f$ using the current decomposition of A.
+      *
+      * \sa compute()
+      */
+    template<typename Rhs>
+    inline const Solve<SparseQR, Rhs> solve(const MatrixBase<Rhs>& B) const 
+    {
+      eigen_assert(m_isInitialized && "The factorization should be called first, use compute()");
+      eigen_assert(this->rows() == B.rows() && "SparseQR::solve() : invalid number of rows in the right hand side matrix");
+      return Solve<SparseQR, Rhs>(*this, B.derived());
+    }
+    template<typename Rhs>
+    inline const Solve<SparseQR, Rhs> solve(const SparseMatrixBase<Rhs>& B) const
+    {
+          eigen_assert(m_isInitialized && "The factorization should be called first, use compute()");
+          eigen_assert(this->rows() == B.rows() && "SparseQR::solve() : invalid number of rows in the right hand side matrix");
+          return Solve<SparseQR, Rhs>(*this, B.derived());
+    }
+    
+    /** \brief Reports whether previous computation was successful.
+      *
+      * \returns \c Success if computation was successful,
+      *          \c NumericalIssue if the QR factorization reports a numerical problem
+      *          \c InvalidInput if the input matrix is invalid
+      *
+      * \sa iparm()          
+      */
+    ComputationInfo info() const
+    {
+      eigen_assert(m_isInitialized && "Decomposition is not initialized.");
+      return m_info;
+    }
+
+
+    /** \internal */
+    inline void _sort_matrix_Q()
+    {
+      if(this->m_isQSorted) return;
+      // The matrix Q is sorted during the transposition
+      SparseMatrix<Scalar, RowMajor, Index> mQrm(this->m_Q);
+      this->m_Q = mQrm;
+      this->m_isQSorted = true;
+    }
+
+    
+  protected:
+    bool m_analysisIsok;
+    bool m_factorizationIsok;
+    mutable ComputationInfo m_info;
+    std::string m_lastError;
+    QRMatrixType m_pmat;            // Temporary matrix
+    QRMatrixType m_R;               // The triangular factor matrix
+    QRMatrixType m_Q;               // The orthogonal reflectors
+    ScalarVector m_hcoeffs;         // The Householder coefficients
+    PermutationType m_perm_c;       // Fill-reducing  Column  permutation
+    PermutationType m_pivotperm;    // The permutation for rank revealing
+    PermutationType m_outputPerm_c; // The final column permutation
+    RealScalar m_threshold;         // Threshold to determine null Householder reflections
+    bool m_useDefaultThreshold;     // Use default threshold
+    Index m_nonzeropivots;          // Number of non zero pivots found
+    IndexVector m_etree;            // Column elimination tree
+    IndexVector m_firstRowElt;      // First element in each row
+    bool m_isQSorted;               // whether Q is sorted or not
+    bool m_isEtreeOk;               // whether the elimination tree match the initial input matrix
+    
+    template <typename, typename > friend struct SparseQR_QProduct;
+    
+};
+
+/** \brief Preprocessing step of a QR factorization 
+  * 
+  * \warning The matrix \a mat must be in compressed mode (see SparseMatrix::makeCompressed()).
+  * 
+  * In this step, the fill-reducing permutation is computed and applied to the columns of A
+  * and the column elimination tree is computed as well. Only the sparsity pattern of \a mat is exploited.
+  * 
+  * \note In this step it is assumed that there is no empty row in the matrix \a mat.
+  */
+template <typename MatrixType, typename OrderingType>
+void SparseQR<MatrixType,OrderingType>::analyzePattern(const MatrixType& mat)
+{
+  eigen_assert(mat.isCompressed() && "SparseQR requires a sparse matrix in compressed mode. Call .makeCompressed() before passing it to SparseQR");
+  // Copy to a column major matrix if the input is rowmajor
+  typename internal::conditional<MatrixType::IsRowMajor,QRMatrixType,const MatrixType&>::type matCpy(mat);
+  // Compute the column fill reducing ordering
+  OrderingType ord; 
+  ord(matCpy, m_perm_c); 
+  Index n = mat.cols();
+  Index m = mat.rows();
+  Index diagSize = (std::min)(m,n);
+  
+  if (!m_perm_c.size())
+  {
+    m_perm_c.resize(n);
+    m_perm_c.indices().setLinSpaced(n, 0,StorageIndex(n-1));
+  }
+  
+  // Compute the column elimination tree of the permuted matrix
+  m_outputPerm_c = m_perm_c.inverse();
+  internal::coletree(matCpy, m_etree, m_firstRowElt, m_outputPerm_c.indices().data());
+  m_isEtreeOk = true;
+  
+  m_R.resize(m, n);
+  m_Q.resize(m, diagSize);
+  
+  // Allocate space for nonzero elements : rough estimation
+  m_R.reserve(2*mat.nonZeros()); //FIXME Get a more accurate estimation through symbolic factorization with the etree
+  m_Q.reserve(2*mat.nonZeros());
+  m_hcoeffs.resize(diagSize);
+  m_analysisIsok = true;
+}
+
+/** \brief Performs the numerical QR factorization of the input matrix
+  * 
+  * The function SparseQR::analyzePattern(const MatrixType&) must have been called beforehand with
+  * a matrix having the same sparsity pattern than \a mat.
+  * 
+  * \param mat The sparse column-major matrix
+  */
+template <typename MatrixType, typename OrderingType>
+void SparseQR<MatrixType,OrderingType>::factorize(const MatrixType& mat)
+{
+  using std::abs;
+  
+  eigen_assert(m_analysisIsok && "analyzePattern() should be called before this step");
+  StorageIndex m = StorageIndex(mat.rows());
+  StorageIndex n = StorageIndex(mat.cols());
+  StorageIndex diagSize = (std::min)(m,n);
+  IndexVector mark((std::max)(m,n)); mark.setConstant(-1);  // Record the visited nodes
+  IndexVector Ridx(n), Qidx(m);                             // Store temporarily the row indexes for the current column of R and Q
+  Index nzcolR, nzcolQ;                                     // Number of nonzero for the current column of R and Q
+  ScalarVector tval(m);                                     // The dense vector used to compute the current column
+  RealScalar pivotThreshold = m_threshold;
+  
+  m_R.setZero();
+  m_Q.setZero();
+  m_pmat = mat;
+  if(!m_isEtreeOk)
+  {
+    m_outputPerm_c = m_perm_c.inverse();
+    internal::coletree(m_pmat, m_etree, m_firstRowElt, m_outputPerm_c.indices().data());
+    m_isEtreeOk = true;
+  }
+
+  m_pmat.uncompress(); // To have the innerNonZeroPtr allocated
+  
+  // Apply the fill-in reducing permutation lazily:
+  {
+    // If the input is row major, copy the original column indices,
+    // otherwise directly use the input matrix
+    // 
+    IndexVector originalOuterIndicesCpy;
+    const StorageIndex *originalOuterIndices = mat.outerIndexPtr();
+    if(MatrixType::IsRowMajor)
+    {
+      originalOuterIndicesCpy = IndexVector::Map(m_pmat.outerIndexPtr(),n+1);
+      originalOuterIndices = originalOuterIndicesCpy.data();
+    }
+    
+    for (int i = 0; i < n; i++)
+    {
+      Index p = m_perm_c.size() ? m_perm_c.indices()(i) : i;
+      m_pmat.outerIndexPtr()[p] = originalOuterIndices[i]; 
+      m_pmat.innerNonZeroPtr()[p] = originalOuterIndices[i+1] - originalOuterIndices[i]; 
+    }
+  }
+  
+  /* Compute the default threshold as in MatLab, see:
+   * Tim Davis, "Algorithm 915, SuiteSparseQR: Multifrontal Multithreaded Rank-Revealing
+   * Sparse QR Factorization, ACM Trans. on Math. Soft. 38(1), 2011, Page 8:3 
+   */
+  if(m_useDefaultThreshold) 
+  {
+    RealScalar max2Norm = 0.0;
+    for (int j = 0; j < n; j++) max2Norm = numext::maxi(max2Norm, m_pmat.col(j).norm());
+    if(max2Norm==RealScalar(0))
+      max2Norm = RealScalar(1);
+    pivotThreshold = 20 * (m + n) * max2Norm * NumTraits<RealScalar>::epsilon();
+  }
+  
+  // Initialize the numerical permutation
+  m_pivotperm.setIdentity(n);
+  
+  StorageIndex nonzeroCol = 0; // Record the number of valid pivots
+  m_Q.startVec(0);
+
+  // Left looking rank-revealing QR factorization: compute a column of R and Q at a time
+  for (StorageIndex col = 0; col < n; ++col)
+  {
+    mark.setConstant(-1);
+    m_R.startVec(col);
+    mark(nonzeroCol) = col;
+    Qidx(0) = nonzeroCol;
+    nzcolR = 0; nzcolQ = 1;
+    bool found_diag = nonzeroCol>=m;
+    tval.setZero(); 
+    
+    // Symbolic factorization: find the nonzero locations of the column k of the factors R and Q, i.e.,
+    // all the nodes (with indexes lower than rank) reachable through the column elimination tree (etree) rooted at node k.
+    // Note: if the diagonal entry does not exist, then its contribution must be explicitly added,
+    // thus the trick with found_diag that permits to do one more iteration on the diagonal element if this one has not been found.
+    for (typename QRMatrixType::InnerIterator itp(m_pmat, col); itp || !found_diag; ++itp)
+    {
+      StorageIndex curIdx = nonzeroCol;
+      if(itp) curIdx = StorageIndex(itp.row());
+      if(curIdx == nonzeroCol) found_diag = true;
+      
+      // Get the nonzeros indexes of the current column of R
+      StorageIndex st = m_firstRowElt(curIdx); // The traversal of the etree starts here
+      if (st < 0 )
+      {
+        m_lastError = "Empty row found during numerical factorization";
+        m_info = InvalidInput;
+        return;
+      }
+
+      // Traverse the etree 
+      Index bi = nzcolR;
+      for (; mark(st) != col; st = m_etree(st))
+      {
+        Ridx(nzcolR) = st;  // Add this row to the list,
+        mark(st) = col;     // and 
