@@ -588,4 +588,387 @@ class SuperLU : public SuperLUBase<_MatrixType,SuperLU<_MatrixType> >
     using Base::m_u;
     
     using Base::m_analysisIsOk;
-    using Ba
+    using Base::m_factorizationIsOk;
+    using Base::m_extractedDataAreDirty;
+    using Base::m_isInitialized;
+    using Base::m_info;
+    
+    void init()
+    {
+      Base::init();
+      
+      set_default_options(&this->m_sluOptions);
+      m_sluOptions.PrintStat        = NO;
+      m_sluOptions.ConditionNumber  = NO;
+      m_sluOptions.Trans            = NOTRANS;
+      m_sluOptions.ColPerm          = COLAMD;
+    }
+    
+    
+  private:
+    SuperLU(SuperLU& ) { }
+};
+
+template<typename MatrixType>
+void SuperLU<MatrixType>::factorize(const MatrixType& a)
+{
+  eigen_assert(m_analysisIsOk && "You must first call analyzePattern()");
+  if(!m_analysisIsOk)
+  {
+    m_info = InvalidInput;
+    return;
+  }
+  
+  this->initFactorization(a);
+  
+  m_sluOptions.ColPerm = COLAMD;
+  int info = 0;
+  RealScalar recip_pivot_growth, rcond;
+  RealScalar ferr, berr;
+
+  StatInit(&m_sluStat);
+  SuperLU_gssvx(&m_sluOptions, &m_sluA, m_q.data(), m_p.data(), &m_sluEtree[0],
+                &m_sluEqued, &m_sluRscale[0], &m_sluCscale[0],
+                &m_sluL, &m_sluU,
+                NULL, 0,
+                &m_sluB, &m_sluX,
+                &recip_pivot_growth, &rcond,
+                &ferr, &berr,
+                &m_sluStat, &info, Scalar());
+  StatFree(&m_sluStat);
+
+  m_extractedDataAreDirty = true;
+
+  // FIXME how to better check for errors ???
+  m_info = info == 0 ? Success : NumericalIssue;
+  m_factorizationIsOk = true;
+}
+
+template<typename MatrixType>
+template<typename Rhs,typename Dest>
+void SuperLU<MatrixType>::_solve_impl(const MatrixBase<Rhs> &b, MatrixBase<Dest>& x) const
+{
+  eigen_assert(m_factorizationIsOk && "The decomposition is not in a valid state for solving, you must first call either compute() or analyzePattern()/factorize()");
+
+  const Index size = m_matrix.rows();
+  const Index rhsCols = b.cols();
+  eigen_assert(size==b.rows());
+
+  m_sluOptions.Trans = NOTRANS;
+  m_sluOptions.Fact = FACTORED;
+  m_sluOptions.IterRefine = NOREFINE;
+  
+
+  m_sluFerr.resize(rhsCols);
+  m_sluBerr.resize(rhsCols);
+  
+  Ref<const Matrix<typename Rhs::Scalar,Dynamic,Dynamic,ColMajor> > b_ref(b);
+  Ref<const Matrix<typename Dest::Scalar,Dynamic,Dynamic,ColMajor> > x_ref(x);
+  
+  m_sluB = SluMatrix::Map(b_ref.const_cast_derived());
+  m_sluX = SluMatrix::Map(x_ref.const_cast_derived());
+  
+  typename Rhs::PlainObject b_cpy;
+  if(m_sluEqued!='N')
+  {
+    b_cpy = b;
+    m_sluB = SluMatrix::Map(b_cpy.const_cast_derived());  
+  }
+
+  StatInit(&m_sluStat);
+  int info = 0;
+  RealScalar recip_pivot_growth, rcond;
+  SuperLU_gssvx(&m_sluOptions, &m_sluA,
+                m_q.data(), m_p.data(),
+                &m_sluEtree[0], &m_sluEqued,
+                &m_sluRscale[0], &m_sluCscale[0],
+                &m_sluL, &m_sluU,
+                NULL, 0,
+                &m_sluB, &m_sluX,
+                &recip_pivot_growth, &rcond,
+                &m_sluFerr[0], &m_sluBerr[0],
+                &m_sluStat, &info, Scalar());
+  StatFree(&m_sluStat);
+  
+  if(x.derived().data() != x_ref.data())
+    x = x_ref;
+  
+  m_info = info==0 ? Success : NumericalIssue;
+}
+
+// the code of this extractData() function has been adapted from the SuperLU's Matlab support code,
+//
+//  Copyright (c) 1994 by Xerox Corporation.  All rights reserved.
+//
+//  THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY
+//  EXPRESSED OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
+//
+template<typename MatrixType, typename Derived>
+void SuperLUBase<MatrixType,Derived>::extractData() const
+{
+  eigen_assert(m_factorizationIsOk && "The decomposition is not in a valid state for extracting factors, you must first call either compute() or analyzePattern()/factorize()");
+  if (m_extractedDataAreDirty)
+  {
+    int         upper;
+    int         fsupc, istart, nsupr;
+    int         lastl = 0, lastu = 0;
+    SCformat    *Lstore = static_cast<SCformat*>(m_sluL.Store);
+    NCformat    *Ustore = static_cast<NCformat*>(m_sluU.Store);
+    Scalar      *SNptr;
+
+    const Index size = m_matrix.rows();
+    m_l.resize(size,size);
+    m_l.resizeNonZeros(Lstore->nnz);
+    m_u.resize(size,size);
+    m_u.resizeNonZeros(Ustore->nnz);
+
+    int* Lcol = m_l.outerIndexPtr();
+    int* Lrow = m_l.innerIndexPtr();
+    Scalar* Lval = m_l.valuePtr();
+
+    int* Ucol = m_u.outerIndexPtr();
+    int* Urow = m_u.innerIndexPtr();
+    Scalar* Uval = m_u.valuePtr();
+
+    Ucol[0] = 0;
+    Ucol[0] = 0;
+
+    /* for each supernode */
+    for (int k = 0; k <= Lstore->nsuper; ++k)
+    {
+      fsupc   = L_FST_SUPC(k);
+      istart  = L_SUB_START(fsupc);
+      nsupr   = L_SUB_START(fsupc+1) - istart;
+      upper   = 1;
+
+      /* for each column in the supernode */
+      for (int j = fsupc; j < L_FST_SUPC(k+1); ++j)
+      {
+        SNptr = &((Scalar*)Lstore->nzval)[L_NZ_START(j)];
+
+        /* Extract U */
+        for (int i = U_NZ_START(j); i < U_NZ_START(j+1); ++i)
+        {
+          Uval[lastu] = ((Scalar*)Ustore->nzval)[i];
+          /* Matlab doesn't like explicit zero. */
+          if (Uval[lastu] != 0.0)
+            Urow[lastu++] = U_SUB(i);
+        }
+        for (int i = 0; i < upper; ++i)
+        {
+          /* upper triangle in the supernode */
+          Uval[lastu] = SNptr[i];
+          /* Matlab doesn't like explicit zero. */
+          if (Uval[lastu] != 0.0)
+            Urow[lastu++] = L_SUB(istart+i);
+        }
+        Ucol[j+1] = lastu;
+
+        /* Extract L */
+        Lval[lastl] = 1.0; /* unit diagonal */
+        Lrow[lastl++] = L_SUB(istart + upper - 1);
+        for (int i = upper; i < nsupr; ++i)
+        {
+          Lval[lastl] = SNptr[i];
+          /* Matlab doesn't like explicit zero. */
+          if (Lval[lastl] != 0.0)
+            Lrow[lastl++] = L_SUB(istart+i);
+        }
+        Lcol[j+1] = lastl;
+
+        ++upper;
+      } /* for j ... */
+
+    } /* for k ... */
+
+    // squeeze the matrices :
+    m_l.resizeNonZeros(lastl);
+    m_u.resizeNonZeros(lastu);
+
+    m_extractedDataAreDirty = false;
+  }
+}
+
+template<typename MatrixType>
+typename SuperLU<MatrixType>::Scalar SuperLU<MatrixType>::determinant() const
+{
+  eigen_assert(m_factorizationIsOk && "The decomposition is not in a valid state for computing the determinant, you must first call either compute() or analyzePattern()/factorize()");
+  
+  if (m_extractedDataAreDirty)
+    this->extractData();
+
+  Scalar det = Scalar(1);
+  for (int j=0; j<m_u.cols(); ++j)
+  {
+    if (m_u.outerIndexPtr()[j+1]-m_u.outerIndexPtr()[j] > 0)
+    {
+      int lastId = m_u.outerIndexPtr()[j+1]-1;
+      eigen_assert(m_u.innerIndexPtr()[lastId]<=j);
+      if (m_u.innerIndexPtr()[lastId]==j)
+        det *= m_u.valuePtr()[lastId];
+    }
+  }
+  if(PermutationMap(m_p.data(),m_p.size()).determinant()*PermutationMap(m_q.data(),m_q.size()).determinant()<0)
+    det = -det;
+  if(m_sluEqued!='N')
+    return det/m_sluRscale.prod()/m_sluCscale.prod();
+  else
+    return det;
+}
+
+#ifdef EIGEN_PARSED_BY_DOXYGEN
+#define EIGEN_SUPERLU_HAS_ILU
+#endif
+
+#ifdef EIGEN_SUPERLU_HAS_ILU
+
+/** \ingroup SuperLUSupport_Module
+  * \class SuperILU
+  * \brief A sparse direct \b incomplete LU factorization and solver based on the SuperLU library
+  *
+  * This class allows to solve for an approximate solution of A.X = B sparse linear problems via an incomplete LU factorization
+  * using the SuperLU library. This class is aimed to be used as a preconditioner of the iterative linear solvers.
+  *
+  * \warning This class is only for the 4.x versions of SuperLU. The 3.x and 5.x versions are not supported.
+  *
+  * \tparam _MatrixType the type of the sparse matrix A, it must be a SparseMatrix<>
+  *
+  * \implsparsesolverconcept
+  *
+  * \sa \ref TutorialSparseSolverConcept, class IncompleteLUT, class ConjugateGradient, class BiCGSTAB
+  */
+
+template<typename _MatrixType>
+class SuperILU : public SuperLUBase<_MatrixType,SuperILU<_MatrixType> >
+{
+  public:
+    typedef SuperLUBase<_MatrixType,SuperILU> Base;
+    typedef _MatrixType MatrixType;
+    typedef typename Base::Scalar Scalar;
+    typedef typename Base::RealScalar RealScalar;
+
+  public:
+    using Base::_solve_impl;
+
+    SuperILU() : Base() { init(); }
+
+    SuperILU(const MatrixType& matrix) : Base()
+    {
+      init();
+      Base::compute(matrix);
+    }
+
+    ~SuperILU()
+    {
+    }
+    
+    /** Performs a symbolic decomposition on the sparcity of \a matrix.
+      *
+      * This function is particularly useful when solving for several problems having the same structure.
+      * 
+      * \sa factorize()
+      */
+    void analyzePattern(const MatrixType& matrix)
+    {
+      Base::analyzePattern(matrix);
+    }
+    
+    /** Performs a numeric decomposition of \a matrix
+      *
+      * The given matrix must has the same sparcity than the matrix on which the symbolic decomposition has been performed.
+      *
+      * \sa analyzePattern()
+      */
+    void factorize(const MatrixType& matrix);
+    
+    #ifndef EIGEN_PARSED_BY_DOXYGEN
+    /** \internal */
+    template<typename Rhs,typename Dest>
+    void _solve_impl(const MatrixBase<Rhs> &b, MatrixBase<Dest> &dest) const;
+    #endif // EIGEN_PARSED_BY_DOXYGEN
+    
+  protected:
+    
+    using Base::m_matrix;
+    using Base::m_sluOptions;
+    using Base::m_sluA;
+    using Base::m_sluB;
+    using Base::m_sluX;
+    using Base::m_p;
+    using Base::m_q;
+    using Base::m_sluEtree;
+    using Base::m_sluEqued;
+    using Base::m_sluRscale;
+    using Base::m_sluCscale;
+    using Base::m_sluL;
+    using Base::m_sluU;
+    using Base::m_sluStat;
+    using Base::m_sluFerr;
+    using Base::m_sluBerr;
+    using Base::m_l;
+    using Base::m_u;
+    
+    using Base::m_analysisIsOk;
+    using Base::m_factorizationIsOk;
+    using Base::m_extractedDataAreDirty;
+    using Base::m_isInitialized;
+    using Base::m_info;
+
+    void init()
+    {
+      Base::init();
+      
+      ilu_set_default_options(&m_sluOptions);
+      m_sluOptions.PrintStat        = NO;
+      m_sluOptions.ConditionNumber  = NO;
+      m_sluOptions.Trans            = NOTRANS;
+      m_sluOptions.ColPerm          = MMD_AT_PLUS_A;
+      
+      // no attempt to preserve column sum
+      m_sluOptions.ILU_MILU = SILU;
+      // only basic ILU(k) support -- no direct control over memory consumption
+      // better to use ILU_DropRule = DROP_BASIC | DROP_AREA
+      // and set ILU_FillFactor to max memory growth
+      m_sluOptions.ILU_DropRule = DROP_BASIC;
+      m_sluOptions.ILU_DropTol = NumTraits<Scalar>::dummy_precision()*10;
+    }
+    
+  private:
+    SuperILU(SuperILU& ) { }
+};
+
+template<typename MatrixType>
+void SuperILU<MatrixType>::factorize(const MatrixType& a)
+{
+  eigen_assert(m_analysisIsOk && "You must first call analyzePattern()");
+  if(!m_analysisIsOk)
+  {
+    m_info = InvalidInput;
+    return;
+  }
+  
+  this->initFactorization(a);
+
+  int info = 0;
+  RealScalar recip_pivot_growth, rcond;
+
+  StatInit(&m_sluStat);
+  SuperLU_gsisx(&m_sluOptions, &m_sluA, m_q.data(), m_p.data(), &m_sluEtree[0],
+                &m_sluEqued, &m_sluRscale[0], &m_sluCscale[0],
+                &m_sluL, &m_sluU,
+                NULL, 0,
+                &m_sluB, &m_sluX,
+                &recip_pivot_growth, &rcond,
+                &m_sluStat, &info, Scalar());
+  StatFree(&m_sluStat);
+
+  // FIXME how to better check for errors ???
+  m_info = info == 0 ? Success : NumericalIssue;
+  m_factorizationIsOk = true;
+}
+
+template<typename MatrixType>
+template<typename Rhs,typename Dest>
+void SuperILU<MatrixType>::_solve_impl(const MatrixBase<Rhs> &b, MatrixBase<Dest>& x) const
+{
+  eigen_assert(m_factorizationIsOk && "The decomposition is not in a valid state for solving, you must first call either compute() or analyzePattern()/factori
