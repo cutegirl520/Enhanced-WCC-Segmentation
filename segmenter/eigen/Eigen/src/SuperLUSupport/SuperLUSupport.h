@@ -971,4 +971,54 @@ template<typename MatrixType>
 template<typename Rhs,typename Dest>
 void SuperILU<MatrixType>::_solve_impl(const MatrixBase<Rhs> &b, MatrixBase<Dest>& x) const
 {
-  eigen_assert(m_factorizationIsOk && "The decomposition is not in a valid state for solving, you must first call either compute() or analyzePattern()/factori
+  eigen_assert(m_factorizationIsOk && "The decomposition is not in a valid state for solving, you must first call either compute() or analyzePattern()/factorize()");
+
+  const int size = m_matrix.rows();
+  const int rhsCols = b.cols();
+  eigen_assert(size==b.rows());
+
+  m_sluOptions.Trans = NOTRANS;
+  m_sluOptions.Fact = FACTORED;
+  m_sluOptions.IterRefine = NOREFINE;
+
+  m_sluFerr.resize(rhsCols);
+  m_sluBerr.resize(rhsCols);
+  
+  Ref<const Matrix<typename Rhs::Scalar,Dynamic,Dynamic,ColMajor> > b_ref(b);
+  Ref<const Matrix<typename Dest::Scalar,Dynamic,Dynamic,ColMajor> > x_ref(x);
+  
+  m_sluB = SluMatrix::Map(b_ref.const_cast_derived());
+  m_sluX = SluMatrix::Map(x_ref.const_cast_derived());
+
+  typename Rhs::PlainObject b_cpy;
+  if(m_sluEqued!='N')
+  {
+    b_cpy = b;
+    m_sluB = SluMatrix::Map(b_cpy.const_cast_derived());  
+  }
+  
+  int info = 0;
+  RealScalar recip_pivot_growth, rcond;
+
+  StatInit(&m_sluStat);
+  SuperLU_gsisx(&m_sluOptions, &m_sluA,
+                m_q.data(), m_p.data(),
+                &m_sluEtree[0], &m_sluEqued,
+                &m_sluRscale[0], &m_sluCscale[0],
+                &m_sluL, &m_sluU,
+                NULL, 0,
+                &m_sluB, &m_sluX,
+                &recip_pivot_growth, &rcond,
+                &m_sluStat, &info, Scalar());
+  StatFree(&m_sluStat);
+  
+  if(x.derived().data() != x_ref.data())
+    x = x_ref;
+
+  m_info = info==0 ? Success : NumericalIssue;
+}
+#endif
+
+} // end namespace Eigen
+
+#endif // EIGEN_SUPERLUSUPPORT_H
