@@ -278,4 +278,275 @@ asin() const
   return AsinReturnType(derived());
 }
 
-/** \returns an
+/** \returns an expression of the coefficient-wise hyperbolic tan of *this.
+  *
+  * Example: \include Cwise_tanh.cpp
+  * Output: \verbinclude Cwise_tanh.out
+  *
+  * \sa tan(), sinh(), cosh()
+  */
+EIGEN_DEVICE_FUNC
+inline const TanhReturnType
+tanh() const
+{
+  return TanhReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise hyperbolic sin of *this.
+  *
+  * Example: \include Cwise_sinh.cpp
+  * Output: \verbinclude Cwise_sinh.out
+  *
+  * \sa sin(), tanh(), cosh()
+  */
+EIGEN_DEVICE_FUNC
+inline const SinhReturnType
+sinh() const
+{
+  return SinhReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise hyperbolic cos of *this.
+  *
+  * Example: \include Cwise_cosh.cpp
+  * Output: \verbinclude Cwise_cosh.out
+  *
+  * \sa tan(), sinh(), cosh()
+  */
+EIGEN_DEVICE_FUNC
+inline const CoshReturnType
+cosh() const
+{
+  return CoshReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise inverse of *this.
+  *
+  * Example: \include Cwise_inverse.cpp
+  * Output: \verbinclude Cwise_inverse.out
+  *
+  * \sa operator/(), operator*()
+  */
+EIGEN_DEVICE_FUNC
+inline const InverseReturnType
+inverse() const
+{
+  return InverseReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise square of *this.
+  *
+  * Example: \include Cwise_square.cpp
+  * Output: \verbinclude Cwise_square.out
+  *
+  * \sa operator/(), operator*(), abs2()
+  */
+EIGEN_DEVICE_FUNC
+inline const SquareReturnType
+square() const
+{
+  return SquareReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise cube of *this.
+  *
+  * Example: \include Cwise_cube.cpp
+  * Output: \verbinclude Cwise_cube.out
+  *
+  * \sa square(), pow()
+  */
+EIGEN_DEVICE_FUNC
+inline const CubeReturnType
+cube() const
+{
+  return CubeReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise round of *this.
+  *
+  * Example: \include Cwise_round.cpp
+  * Output: \verbinclude Cwise_round.out
+  *
+  * \sa ceil(), floor()
+  */
+EIGEN_DEVICE_FUNC
+inline const RoundReturnType
+round() const
+{
+  return RoundReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise floor of *this.
+  *
+  * Example: \include Cwise_floor.cpp
+  * Output: \verbinclude Cwise_floor.out
+  *
+  * \sa ceil(), round()
+  */
+EIGEN_DEVICE_FUNC
+inline const FloorReturnType
+floor() const
+{
+  return FloorReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise ceil of *this.
+  *
+  * Example: \include Cwise_ceil.cpp
+  * Output: \verbinclude Cwise_ceil.out
+  *
+  * \sa floor(), round()
+  */
+EIGEN_DEVICE_FUNC
+inline const CeilReturnType
+ceil() const
+{
+  return CeilReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise isnan of *this.
+  *
+  * Example: \include Cwise_isNaN.cpp
+  * Output: \verbinclude Cwise_isNaN.out
+  *
+  * \sa isfinite(), isinf()
+  */
+EIGEN_DEVICE_FUNC
+inline const IsNaNReturnType
+isNaN() const
+{
+  return IsNaNReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise isinf of *this.
+  *
+  * Example: \include Cwise_isInf.cpp
+  * Output: \verbinclude Cwise_isInf.out
+  *
+  * \sa isnan(), isfinite()
+  */
+EIGEN_DEVICE_FUNC
+inline const IsInfReturnType
+isInf() const
+{
+  return IsInfReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise isfinite of *this.
+  *
+  * Example: \include Cwise_isFinite.cpp
+  * Output: \verbinclude Cwise_isFinite.out
+  *
+  * \sa isnan(), isinf()
+  */
+EIGEN_DEVICE_FUNC
+inline const IsFiniteReturnType
+isFinite() const
+{
+  return IsFiniteReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise ! operator of *this
+  *
+  * \warning this operator is for expression of bool only.
+  *
+  * Example: \include Cwise_boolean_not.cpp
+  * Output: \verbinclude Cwise_boolean_not.out
+  *
+  * \sa operator!=()
+  */
+EIGEN_DEVICE_FUNC
+inline const BooleanNotReturnType
+operator!() const
+{
+  EIGEN_STATIC_ASSERT((internal::is_same<bool,Scalar>::value),
+                      THIS_METHOD_IS_ONLY_FOR_EXPRESSIONS_OF_BOOL);
+  return BooleanNotReturnType(derived());
+}
+
+
+// --- SpecialFunctions module ---
+
+typedef CwiseUnaryOp<internal::scalar_lgamma_op<Scalar>, const Derived> LgammaReturnType;
+typedef CwiseUnaryOp<internal::scalar_digamma_op<Scalar>, const Derived> DigammaReturnType;
+typedef CwiseUnaryOp<internal::scalar_erf_op<Scalar>, const Derived> ErfReturnType;
+typedef CwiseUnaryOp<internal::scalar_erfc_op<Scalar>, const Derived> ErfcReturnType;
+
+/** \cpp11 \returns an expression of the coefficient-wise ln(|gamma(*this)|).
+  *
+  * \specialfunctions_module
+  *
+  * Example: \include Cwise_lgamma.cpp
+  * Output: \verbinclude Cwise_lgamma.out
+  *
+  * \note This function supports only float and double scalar types in c++11 mode. To support other scalar types,
+  * or float/double in non c++11 mode, the user has to provide implementations of lgamma(T) for any scalar
+  * type T to be supported.
+  *
+  * \sa digamma()
+  */
+EIGEN_DEVICE_FUNC
+inline const LgammaReturnType
+lgamma() const
+{
+  return LgammaReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise digamma (psi, derivative of lgamma).
+  *
+  * \specialfunctions_module
+  *
+  * \note This function supports only float and double scalar types. To support other scalar types,
+  * the user has to provide implementations of digamma(T) for any scalar
+  * type T to be supported.
+  *
+  * \sa Eigen::digamma(), Eigen::polygamma(), lgamma()
+  */
+EIGEN_DEVICE_FUNC
+inline const DigammaReturnType
+digamma() const
+{
+  return DigammaReturnType(derived());
+}
+
+/** \cpp11 \returns an expression of the coefficient-wise Gauss error
+  * function of *this.
+  *
+  * \specialfunctions_module
+  *
+  * Example: \include Cwise_erf.cpp
+  * Output: \verbinclude Cwise_erf.out
+  *
+  * \note This function supports only float and double scalar types in c++11 mode. To support other scalar types,
+  * or float/double in non c++11 mode, the user has to provide implementations of erf(T) for any scalar
+  * type T to be supported.
+  *
+  * \sa erfc()
+  */
+EIGEN_DEVICE_FUNC
+inline const ErfReturnType
+erf() const
+{
+  return ErfReturnType(derived());
+}
+
+/** \cpp11 \returns an expression of the coefficient-wise Complementary error
+  * function of *this.
+  *
+  * \specialfunctions_module
+  *
+  * Example: \include Cwise_erfc.cpp
+  * Output: \verbinclude Cwise_erfc.out
+  *
+  * \note This function supports only float and double scalar types in c++11 mode. To support other scalar types,
+  * or float/double in non c++11 mode, the user has to provide implementations of erfc(T) for any scalar
+  * type T to be supported.
+  *
+  * \sa erf()
+  */
+EIGEN_DEVICE_FUNC
+inline const ErfcReturnType
+erfc() const
+{
+  return ErfcReturnType(derived());
+}
