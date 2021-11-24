@@ -545,4 +545,332 @@ void find_subset_with_efficiency_higher_than(
 void find_partition_with_efficiency_higher_than(
        const vector<preprocessed_inputfile_t>& preprocessed_inputfiles,
        float required_efficiency_to_beat,
-       vector<vector<size_t>>& out
+       vector<vector<size_t>>& out_partition)
+{
+  out_partition.resize(0);
+
+  vector<size_t> remainder;
+  for (size_t i = 0; i < preprocessed_inputfiles.size(); i++) {
+    remainder.push_back(i);
+  }
+
+  while (!remainder.empty()) {
+    vector<size_t> new_subset;
+    find_subset_with_efficiency_higher_than(
+      preprocessed_inputfiles,
+      required_efficiency_to_beat,
+      remainder,
+      new_subset);
+    out_partition.push_back(new_subset);
+  }
+}
+
+void print_partition(
+       const vector<preprocessed_inputfile_t>& preprocessed_inputfiles,
+       const vector<vector<size_t>>& partition)
+{
+  float efficiency = efficiency_of_partition(preprocessed_inputfiles, partition);
+  cout << "Partition into " << partition.size() << " subsets for " << efficiency * 100.0f << "% efficiency"  << endl;
+  for (auto subset = partition.begin(); subset != partition.end(); ++subset) {
+    cout << "  Subset " << (subset - partition.begin())
+         << ", efficiency " << efficiency_of_subset(preprocessed_inputfiles, *subset) * 100.0f << "%:"
+         << endl;
+    for (auto file = subset->begin(); file != subset->end(); ++file) {
+      cout << "    " << preprocessed_inputfiles[*file].filename << endl;
+    }
+    if (dump_tables) {
+      cout << "  Table:" << endl;
+      dump_table_for_subset(preprocessed_inputfiles, *subset);
+    }
+  }
+  cout << endl;
+}
+
+struct action_t
+{
+  virtual const char* invokation_name() const { abort(); return nullptr; }
+  virtual void run(const vector<string>&) const { abort(); }
+  virtual ~action_t() {}
+};
+
+struct partition_action_t : action_t
+{
+  virtual const char* invokation_name() const override { return "partition"; }
+  virtual void run(const vector<string>& input_filenames) const override
+  {
+    vector<preprocessed_inputfile_t> preprocessed_inputfiles;
+
+    if (input_filenames.empty()) {
+      cerr << "The " << invokation_name() << " action needs a list of input files." << endl;
+      exit(1);
+    }
+
+    for (auto it = input_filenames.begin(); it != input_filenames.end(); ++it) {
+      inputfile_t inputfile(*it);
+      switch (inputfile.type) {
+        case inputfile_t::type_t::all_pot_sizes:
+          preprocessed_inputfiles.emplace_back(inputfile);
+          break;
+        case inputfile_t::type_t::default_sizes:
+          cerr << "The " << invokation_name() << " action only uses measurements for all pot sizes, and "
+               << "has no use for " << *it << " which contains measurements for default sizes." << endl;
+          exit(1);
+          break;
+        default:
+          cerr << "Unrecognized input file: " << *it << endl;
+          exit(1);
+      }
+    }
+
+    check_all_files_in_same_exact_order(preprocessed_inputfiles);
+
+    float required_efficiency_to_beat = 0.0f;
+    vector<vector<vector<size_t>>> partitions;
+    cerr << "searching for partitions...\r" << flush;
+    while (true)
+    {
+      vector<vector<size_t>> partition;
+      find_partition_with_efficiency_higher_than(
+        preprocessed_inputfiles,
+        required_efficiency_to_beat,
+        partition);
+      float actual_efficiency = efficiency_of_partition(preprocessed_inputfiles, partition);
+      cerr << "partition " << preprocessed_inputfiles.size() << " files into " << partition.size()
+           << " subsets for " << 100.0f * actual_efficiency
+           << " % efficiency"
+           << "                  \r" << flush;
+      partitions.push_back(partition);
+      if (partition.size() == preprocessed_inputfiles.size() || actual_efficiency == 1.0f) {
+        break;
+      }
+      required_efficiency_to_beat = actual_efficiency;
+    }
+    cerr << "                                                                  " << endl;
+    while (true) {
+      bool repeat = false;
+      for (size_t i = 0; i < partitions.size() - 1; i++) {
+        if (partitions[i].size() >= partitions[i+1].size()) {
+          partitions.erase(partitions.begin() + i);
+          repeat = true;
+          break;
+        }
+      }
+      if (!repeat) {
+        break;
+      }
+    }
+    for (auto it = partitions.begin(); it != partitions.end(); ++it) {
+      print_partition(preprocessed_inputfiles, *it);
+    }
+  }
+};
+
+struct evaluate_defaults_action_t : action_t
+{
+  struct results_entry_t {
+    uint16_t product_size;
+    size_triple_t default_block_size;
+    uint16_t best_pot_block_size;
+    float default_gflops;
+    float best_pot_gflops;
+    float default_efficiency;
+  };
+  friend ostream& operator<<(ostream& s, const results_entry_t& entry)
+  {
+    return s
+      << "Product size " << size_triple_t(entry.product_size)
+      << ": default block size " << entry.default_block_size
+      << " -> " << entry.default_gflops
+      << " GFlop/s = " << entry.default_efficiency * 100.0f << " %"
+      << " of best POT block size " << size_triple_t(entry.best_pot_block_size)
+      << " -> " << entry.best_pot_gflops
+      << " GFlop/s" << dec;
+  }
+  static bool lower_efficiency(const results_entry_t& e1, const results_entry_t& e2) {
+    return e1.default_efficiency < e2.default_efficiency;
+  }
+  virtual const char* invokation_name() const override { return "evaluate-defaults"; }
+  void show_usage_and_exit() const
+  {
+    cerr << "usage: " << invokation_name() << " default-sizes-data all-pot-sizes-data" << endl;
+    cerr << "checks how well the performance with default sizes compares to the best "
+         << "performance measured over all POT sizes." << endl;
+    exit(1);
+  }
+  virtual void run(const vector<string>& input_filenames) const override
+  {
+    if (input_filenames.size() != 2) {
+      show_usage_and_exit();
+    }
+    inputfile_t inputfile_default_sizes(input_filenames[0]);
+    inputfile_t inputfile_all_pot_sizes(input_filenames[1]);
+    if (inputfile_default_sizes.type != inputfile_t::type_t::default_sizes) {
+      cerr << inputfile_default_sizes.filename << " is not an input file with default sizes." << endl;
+      show_usage_and_exit();
+    }
+    if (inputfile_all_pot_sizes.type != inputfile_t::type_t::all_pot_sizes) {
+      cerr << inputfile_all_pot_sizes.filename << " is not an input file with all POT sizes." << endl;
+      show_usage_and_exit();
+    }
+    vector<results_entry_t> results;
+    vector<results_entry_t> cubic_results;
+    
+    uint16_t product_size = 0;
+    auto it_all_pot_sizes = inputfile_all_pot_sizes.entries.begin();
+    for (auto it_default_sizes = inputfile_default_sizes.entries.begin();
+         it_default_sizes != inputfile_default_sizes.entries.end();
+         ++it_default_sizes)
+    {
+      if (it_default_sizes->product_size == product_size) {
+        continue;
+      }
+      product_size = it_default_sizes->product_size;
+      while (it_all_pot_sizes != inputfile_all_pot_sizes.entries.end() &&
+             it_all_pot_sizes->product_size != product_size)
+      {
+        ++it_all_pot_sizes;
+      }
+      if (it_all_pot_sizes == inputfile_all_pot_sizes.entries.end()) {
+        break;
+      }
+      uint16_t best_pot_block_size = 0;
+      float best_pot_gflops = 0;
+      for (auto it = it_all_pot_sizes;
+           it != inputfile_all_pot_sizes.entries.end() && it->product_size == product_size;
+           ++it)
+      {
+        if (it->gflops > best_pot_gflops) {
+          best_pot_gflops = it->gflops;
+          best_pot_block_size = it->pot_block_size;
+        }
+      }
+      results_entry_t entry;
+      entry.product_size = product_size;
+      entry.default_block_size = it_default_sizes->nonpot_block_size;
+      entry.best_pot_block_size = best_pot_block_size;
+      entry.default_gflops = it_default_sizes->gflops;
+      entry.best_pot_gflops = best_pot_gflops;
+      entry.default_efficiency = entry.default_gflops / entry.best_pot_gflops;
+      results.push_back(entry);
+
+      size_triple_t t(product_size);
+      if (t.k == t.m && t.m == t.n) {
+        cubic_results.push_back(entry);
+      }
+    }
+
+    cout << "All results:" << endl;
+    for (auto it = results.begin(); it != results.end(); ++it) {
+      cout << *it << endl;
+    }
+    cout << endl;
+
+    sort(results.begin(), results.end(), lower_efficiency);
+    
+    const size_t n = min<size_t>(20, results.size());
+    cout << n << " worst results:" << endl;
+    for (size_t i = 0; i < n; i++) {
+      cout << results[i] << endl;
+    }
+    cout << endl;
+
+    cout << "cubic results:" << endl;
+    for (auto it = cubic_results.begin(); it != cubic_results.end(); ++it) {
+      cout << *it << endl;
+    }
+    cout << endl;
+
+    sort(cubic_results.begin(), cubic_results.end(), lower_efficiency);
+    
+    cout.precision(2);
+    vector<float> a = {0.5f, 0.20f, 0.10f, 0.05f, 0.02f, 0.01f};
+    for (auto it = a.begin(); it != a.end(); ++it) {
+      size_t n = min(results.size() - 1, size_t(*it * results.size()));
+      cout << (100.0f * n / (results.size() - 1))
+           << " % of product sizes have default efficiency <= "
+           << 100.0f * results[n].default_efficiency << " %" << endl;
+    }
+    cout.precision(default_precision);
+  }
+};
+
+
+void show_usage_and_exit(int argc, char* argv[],
+                         const vector<unique_ptr<action_t>>& available_actions)
+{
+  cerr << "usage: " << argv[0] << " <action> [options...] <input files...>" << endl;
+  cerr << "available actions:" << endl;
+  for (auto it = available_actions.begin(); it != available_actions.end(); ++it) {
+    cerr << "  " << (*it)->invokation_name() << endl;
+  } 
+  cerr << "the input files should each contain an output of benchmark-blocking-sizes" << endl;
+  exit(1);
+}
+
+int main(int argc, char* argv[])
+{
+  cout.precision(default_precision);
+  cerr.precision(default_precision);
+
+  vector<unique_ptr<action_t>> available_actions;
+  available_actions.emplace_back(new partition_action_t);
+  available_actions.emplace_back(new evaluate_defaults_action_t);
+
+  vector<string> input_filenames;
+
+  action_t* action = nullptr;
+
+  if (argc < 2) {
+    show_usage_and_exit(argc, argv, available_actions);
+  }
+  for (int i = 1; i < argc; i++) {
+    bool arg_handled = false;
+    // Step 1. Try to match action invokation names.
+    for (auto it = available_actions.begin(); it != available_actions.end(); ++it) {
+      if (!strcmp(argv[i], (*it)->invokation_name())) {
+        if (!action) {
+          action = it->get();
+          arg_handled = true;
+          break;
+        } else {
+          cerr << "can't specify more than one action!" << endl;
+          show_usage_and_exit(argc, argv, available_actions);
+        }
+      }
+    }
+    if (arg_handled) {
+      continue;
+    }
+    // Step 2. Try to match option names.
+    if (argv[i][0] == '-') {
+      if (!strcmp(argv[i], "--only-cubic-sizes")) {
+        only_cubic_sizes = true;
+        arg_handled = true;
+      }
+      if (!strcmp(argv[i], "--dump-tables")) {
+        dump_tables = true;
+        arg_handled = true;
+      }
+      if (!arg_handled) {
+        cerr << "Unrecognized option: " << argv[i] << endl;
+        show_usage_and_exit(argc, argv, available_actions);
+      }
+    }
+    if (arg_handled) {
+      continue;
+    }
+    // Step 3. Default to interpreting args as input filenames.
+    input_filenames.emplace_back(argv[i]);
+  }
+
+  if (dump_tables && only_cubic_sizes) {
+    cerr << "Incompatible options: --only-cubic-sizes and --dump-tables." << endl;
+    show_usage_and_exit(argc, argv, available_actions);
+  }
+
+  if (!action) {
+    show_usage_and_exit(argc, argv, available_actions);
+  }
+
+  action->run(input_filenames);
+}
