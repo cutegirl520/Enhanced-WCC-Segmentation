@@ -221,4 +221,328 @@ struct preprocessed_inputfile_t
     while (it != inputfile.entries.end()) {
       ++it;
       if (it == inputfile.entries.end() ||
-        it->product_size != it_first_with_given
+        it->product_size != it_first_with_given_product_size->product_size)
+      {
+        import_input_file_range_one_product_size(it_first_with_given_product_size, it);
+        it_first_with_given_product_size = it;
+      }
+    }
+  }
+
+private:
+  void import_input_file_range_one_product_size(
+    const vector<inputfile_entry_t>::const_iterator& begin,
+    const vector<inputfile_entry_t>::const_iterator& end)
+  {
+    uint16_t product_size = begin->product_size;
+    float max_gflops = 0.0f;
+    for (auto it = begin; it != end; ++it) {
+      if (it->product_size != product_size) {
+        cerr << "Unexpected ordering of entries in " << filename << endl;
+        cerr << "(Expected all entries for product size " << hex << product_size << dec << " to be grouped)" << endl;
+        exit(1);
+      }
+      max_gflops = max(max_gflops, it->gflops);
+    }
+    for (auto it = begin; it != end; ++it) {
+      preprocessed_inputfile_entry_t entry;
+      entry.product_size = it->product_size;
+      entry.block_size = it->pot_block_size;
+      entry.efficiency = it->gflops / max_gflops;
+      entries.push_back(entry);
+    }
+  }
+};
+
+void check_all_files_in_same_exact_order(
+       const vector<preprocessed_inputfile_t>& preprocessed_inputfiles)
+{
+  if (preprocessed_inputfiles.empty()) {
+    return;
+  }
+
+  const preprocessed_inputfile_t& first_file = preprocessed_inputfiles[0];
+  const size_t num_entries = first_file.entries.size();
+
+  for (size_t i = 0; i < preprocessed_inputfiles.size(); i++) {
+    if (preprocessed_inputfiles[i].entries.size() != num_entries) {
+      cerr << "these files have different number of entries: "
+           << preprocessed_inputfiles[i].filename
+           << " and "
+           << first_file.filename
+           << endl;
+      exit(1);
+    }
+  }
+
+  for (size_t entry_index = 0; entry_index < num_entries; entry_index++) {
+    const uint16_t entry_product_size = first_file.entries[entry_index].product_size;
+    const uint16_t entry_block_size = first_file.entries[entry_index].block_size;
+    for (size_t file_index = 0; file_index < preprocessed_inputfiles.size(); file_index++) {
+      const preprocessed_inputfile_t& cur_file = preprocessed_inputfiles[file_index];
+      if (cur_file.entries[entry_index].product_size != entry_product_size ||
+          cur_file.entries[entry_index].block_size != entry_block_size)
+      {
+        cerr << "entries not in same order between these files: "
+             << first_file.filename
+             << " and "
+             << cur_file.filename
+             << endl;
+        exit(1);
+      }
+    }
+  }
+}
+
+float efficiency_of_subset(
+        const vector<preprocessed_inputfile_t>& preprocessed_inputfiles,
+        const vector<size_t>& subset)
+{
+  if (subset.size() <= 1) {
+    return 1.0f;
+  }
+  const preprocessed_inputfile_t& first_file = preprocessed_inputfiles[subset[0]];
+  const size_t num_entries = first_file.entries.size();
+  float efficiency = 1.0f;
+  size_t entry_index = 0;
+  size_t first_entry_index_with_this_product_size = 0;
+  uint16_t product_size = first_file.entries[0].product_size;
+  while (entry_index < num_entries) {
+    ++entry_index;
+    if (entry_index == num_entries ||
+        first_file.entries[entry_index].product_size != product_size)
+    {
+      float efficiency_this_product_size = 0.0f;
+      for (size_t e = first_entry_index_with_this_product_size; e < entry_index; e++) {
+        float efficiency_this_entry = 1.0f;
+        for (auto i = subset.begin(); i != subset.end(); ++i) {
+          efficiency_this_entry = min(efficiency_this_entry, preprocessed_inputfiles[*i].entries[e].efficiency);
+        }
+        efficiency_this_product_size = max(efficiency_this_product_size, efficiency_this_entry);
+      }
+      efficiency = min(efficiency, efficiency_this_product_size);
+      if (entry_index < num_entries) {
+        first_entry_index_with_this_product_size = entry_index;
+        product_size = first_file.entries[entry_index].product_size;
+      }
+    }
+  }
+
+  return efficiency;
+}
+
+void dump_table_for_subset(
+        const vector<preprocessed_inputfile_t>& preprocessed_inputfiles,
+        const vector<size_t>& subset)
+{
+  const preprocessed_inputfile_t& first_file = preprocessed_inputfiles[subset[0]];
+  const size_t num_entries = first_file.entries.size();
+  size_t entry_index = 0;
+  size_t first_entry_index_with_this_product_size = 0;
+  uint16_t product_size = first_file.entries[0].product_size;
+  size_t i = 0;
+  size_triple_t min_product_size(first_file.entries.front().product_size);
+  size_triple_t max_product_size(first_file.entries.back().product_size);
+  if (!min_product_size.is_cubic() || !max_product_size.is_cubic()) {
+    abort();
+  }
+  if (only_cubic_sizes) {
+    cerr << "Can't generate tables with --only-cubic-sizes." << endl;
+    abort();
+  }
+  cout << "struct LookupTable {" << endl;
+  cout << "  static const size_t BaseSize = " << min_product_size.k << ";" << endl;
+  const size_t NumSizes = log2_pot(max_product_size.k / min_product_size.k) + 1;
+  const size_t TableSize = NumSizes * NumSizes * NumSizes;
+  cout << "  static const size_t NumSizes = " << NumSizes << ";" << endl;
+  cout << "  static const unsigned short* Data() {" << endl;
+  cout << "    static const unsigned short data[" << TableSize << "] = {";
+  while (entry_index < num_entries) {
+    ++entry_index;
+    if (entry_index == num_entries ||
+        first_file.entries[entry_index].product_size != product_size)
+    {
+      float best_efficiency_this_product_size = 0.0f;
+      uint16_t best_block_size_this_product_size = 0;
+      for (size_t e = first_entry_index_with_this_product_size; e < entry_index; e++) {
+        float efficiency_this_entry = 1.0f;
+        for (auto i = subset.begin(); i != subset.end(); ++i) {
+          efficiency_this_entry = min(efficiency_this_entry, preprocessed_inputfiles[*i].entries[e].efficiency);
+        }
+        if (efficiency_this_entry > best_efficiency_this_product_size) {
+          best_efficiency_this_product_size = efficiency_this_entry;
+          best_block_size_this_product_size = first_file.entries[e].block_size;
+        }
+      }
+      if ((i++) % NumSizes) {
+        cout << " ";
+      } else {
+        cout << endl << "      ";
+      }
+      cout << "0x" << hex << best_block_size_this_product_size << dec;
+      if (entry_index < num_entries) {
+        cout << ",";
+        first_entry_index_with_this_product_size = entry_index;
+        product_size = first_file.entries[entry_index].product_size;
+      }
+    }
+  }
+  if (i != TableSize) {
+    cerr << endl << "Wrote " << i << " table entries, expected " << TableSize << endl;
+    abort();
+  }
+  cout << endl << "    };" << endl;
+  cout << "    return data;" << endl;
+  cout << "  }" << endl;
+  cout << "};" << endl;
+}
+
+float efficiency_of_partition(
+        const vector<preprocessed_inputfile_t>& preprocessed_inputfiles,
+        const vector<vector<size_t>>& partition)
+{
+  float efficiency = 1.0f;
+  for (auto s = partition.begin(); s != partition.end(); ++s) {
+    efficiency = min(efficiency, efficiency_of_subset(preprocessed_inputfiles, *s));
+  }
+  return efficiency;
+}
+
+void make_first_subset(size_t subset_size, vector<size_t>& out_subset, size_t set_size)
+{
+  assert(subset_size >= 1 && subset_size <= set_size);
+  out_subset.resize(subset_size);
+  for (size_t i = 0; i < subset_size; i++) {
+    out_subset[i] = i;
+  }
+}
+
+bool is_last_subset(const vector<size_t>& subset, size_t set_size)
+{
+  return subset[0] == set_size - subset.size();
+}
+
+void next_subset(vector<size_t>& inout_subset, size_t set_size)
+{
+  if (is_last_subset(inout_subset, set_size)) {
+    cerr << "iterating past the last subset" << endl;
+    abort();
+  }
+  size_t i = 1;
+  while (inout_subset[inout_subset.size() - i] == set_size - i) {
+    i++;
+    assert(i <= inout_subset.size());
+  }
+  size_t first_index_to_change = inout_subset.size() - i;
+  inout_subset[first_index_to_change]++;
+  size_t p = inout_subset[first_index_to_change];
+  for (size_t j = first_index_to_change + 1; j < inout_subset.size(); j++) {
+    inout_subset[j] = ++p;
+  }
+}
+
+const size_t number_of_subsets_limit = 100;
+const size_t always_search_subsets_of_size_at_least = 2;
+
+bool is_number_of_subsets_feasible(size_t n, size_t p)
+{ 
+  assert(n>0 && p>0 && p<=n);
+  uint64_t numerator = 1, denominator = 1;
+  for (size_t i = 0; i < p; i++) {
+    numerator *= n - i;
+    denominator *= i + 1;
+    if (numerator > denominator * number_of_subsets_limit) {
+      return false;
+    }
+  }
+  return true;
+}
+
+size_t max_feasible_subset_size(size_t n)
+{
+  assert(n > 0);
+  const size_t minresult = min<size_t>(n-1, always_search_subsets_of_size_at_least);
+  for (size_t p = 1; p <= n - 1; p++) {
+    if (!is_number_of_subsets_feasible(n, p+1)) {
+      return max(p, minresult);
+    }
+  }
+  return n - 1;
+}
+
+void find_subset_with_efficiency_higher_than(
+       const vector<preprocessed_inputfile_t>& preprocessed_inputfiles,
+       float required_efficiency_to_beat,
+       vector<size_t>& inout_remainder,
+       vector<size_t>& out_subset)
+{
+  out_subset.resize(0);
+
+  if (required_efficiency_to_beat >= 1.0f) {
+    cerr << "can't beat efficiency 1." << endl;
+    abort();
+  }
+
+  while (!inout_remainder.empty()) {
+
+    vector<size_t> candidate_indices(inout_remainder.size());
+    for (size_t i = 0; i < candidate_indices.size(); i++) {
+      candidate_indices[i] = i;
+    }
+
+    size_t candidate_indices_subset_size = max_feasible_subset_size(candidate_indices.size());
+    while (candidate_indices_subset_size >= 1) {
+      vector<size_t> candidate_indices_subset;
+      make_first_subset(candidate_indices_subset_size,
+                        candidate_indices_subset,
+                        candidate_indices.size());
+
+      vector<size_t> best_candidate_indices_subset;
+      float best_efficiency = 0.0f;
+      vector<size_t> trial_subset = out_subset;
+      trial_subset.resize(out_subset.size() + candidate_indices_subset_size);
+      while (true)
+      {
+        for (size_t i = 0; i < candidate_indices_subset_size; i++) {
+          trial_subset[out_subset.size() + i] = inout_remainder[candidate_indices_subset[i]];
+        }
+        
+        float trial_efficiency = efficiency_of_subset(preprocessed_inputfiles, trial_subset);
+        if (trial_efficiency > best_efficiency) {
+          best_efficiency = trial_efficiency;
+          best_candidate_indices_subset = candidate_indices_subset;
+        }
+        if (is_last_subset(candidate_indices_subset, candidate_indices.size())) {
+          break;
+        }
+        next_subset(candidate_indices_subset, candidate_indices.size());
+      }
+       
+      if (best_efficiency > required_efficiency_to_beat) {
+        for (size_t i = 0; i < best_candidate_indices_subset.size(); i++) {
+          candidate_indices[i] = candidate_indices[best_candidate_indices_subset[i]];
+        }
+        candidate_indices.resize(best_candidate_indices_subset.size());
+      }
+      candidate_indices_subset_size--;
+    }
+      
+    size_t candidate_index = candidate_indices[0];
+    auto candidate_iterator = inout_remainder.begin() + candidate_index;
+    vector<size_t> trial_subset = out_subset;
+
+    trial_subset.push_back(*candidate_iterator);
+    float trial_efficiency = efficiency_of_subset(preprocessed_inputfiles, trial_subset);
+    if (trial_efficiency > required_efficiency_to_beat) {
+      out_subset.push_back(*candidate_iterator);
+      inout_remainder.erase(candidate_iterator);
+    } else {
+      break;
+    }
+  }
+}
+
+void find_partition_with_efficiency_higher_than(
+       const vector<preprocessed_inputfile_t>& preprocessed_inputfiles,
+       float required_efficiency_to_beat,
+       vector<vector<size_t>>& out
