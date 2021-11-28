@@ -404,3 +404,274 @@ void try_run_some_benchmarks(
     // We check clock speed every minute and at the end.
     if (benchmark_index == benchmarks.size() ||
         time_now > time_last_clock_speed_measurement + 60.0f)
+    {
+      time_last_clock_speed_measurement = time_now;
+
+      // Ensure that clock speed is as expected
+      float current_clock_speed = measure_clock_speed();
+
+      // The tolerance needs to be smaller than the relative difference between
+      // clock speeds that a device could operate under.
+      // It seems unlikely that a device would be throttling clock speeds by
+      // amounts smaller than 2%.
+      // With a value of 1%, I was getting within noise on a Sandy Bridge.
+      const float clock_speed_tolerance = 0.02f;
+
+      if (current_clock_speed > (1 + clock_speed_tolerance) * max_clock_speed) {
+        // Clock speed is now higher than we previously measured.
+        // Either our initial measurement was inaccurate, which won't happen
+        // too many times as we are keeping the best clock speed value and
+        // and allowing some tolerance; or something really weird happened,
+        // which invalidates all benchmark results collected so far.
+        // Either way, we better restart all over again now.
+        if (benchmark_index) {
+          cerr << "Restarting at " << 100.0f * ratio_done
+               << " % because clock speed increased.          " << endl;
+        }
+        max_clock_speed = current_clock_speed;
+        first_benchmark_to_run = 0;
+        return;
+      }
+
+      bool rerun_last_tests = false;
+
+      if (current_clock_speed < (1 - clock_speed_tolerance) * max_clock_speed) {
+        cerr << "Measurements completed so far: "
+             << 100.0f * ratio_done
+             << " %                             " << endl;
+        cerr << "Clock speed seems to be only "
+             << current_clock_speed/max_clock_speed
+             << " times what it used to be." << endl;
+
+        unsigned int seconds_to_sleep_if_lower_clock_speed = 1;
+
+        while (current_clock_speed < (1 - clock_speed_tolerance) * max_clock_speed) {
+          if (seconds_to_sleep_if_lower_clock_speed > 32) {
+            cerr << "Sleeping longer probably won't make a difference." << endl;
+            cerr << "Serializing benchmarks to " << session_filename << endl;
+            serialize_benchmarks(session_filename, benchmarks, first_benchmark_to_run);
+            cerr << "Now restart this benchmark, and it should pick up where we left." << endl;
+            exit(2);
+          }
+          rerun_last_tests = true;
+          cerr << "Sleeping "
+               << seconds_to_sleep_if_lower_clock_speed
+               << " s...                                   \r" << endl;
+          sleep(seconds_to_sleep_if_lower_clock_speed);
+          current_clock_speed = measure_clock_speed();
+          seconds_to_sleep_if_lower_clock_speed *= 2;
+        }
+      }
+
+      if (rerun_last_tests) {
+        cerr << "Redoing the last "
+             << 100.0f * float(benchmark_index - first_benchmark_to_run) / benchmarks.size()
+             << " % because clock speed had been low.   " << endl;
+        return;
+      }
+
+      // nothing wrong with the clock speed so far, so there won't be a need to rerun
+      // benchmarks run so far in case we later encounter a lower clock speed.
+      first_benchmark_to_run = benchmark_index;
+    }
+
+    if (benchmark_index == benchmarks.size()) {
+      // We're done!
+      first_benchmark_to_run = benchmarks.size();
+      // Erase progress info
+      cerr << "                                                            " << endl;
+      return;
+    }
+
+    // Display progress info on stderr
+    if (time_now > time_last_progress_update + 1.0f) {
+      time_last_progress_update = time_now;
+      cerr << "Measurements... " << 100.0f * ratio_done
+           << " %, ETA "
+           << human_duration_t(float(time_now - time_start) * (1.0f - ratio_done) / ratio_done)
+           << "                          \r" << flush;
+    }
+
+    // This is where we actually run a benchmark!
+    benchmarks[benchmark_index].run();
+    benchmark_index++;
+  }
+}
+
+void run_benchmarks(vector<benchmark_t>& benchmarks)
+{
+  size_t first_benchmark_to_run;
+  vector<benchmark_t> deserialized_benchmarks;
+  bool use_deserialized_benchmarks = false;
+  if (deserialize_benchmarks(session_filename, deserialized_benchmarks, first_benchmark_to_run)) {
+    cerr << "Found serialized session with "
+         << 100.0f * first_benchmark_to_run / deserialized_benchmarks.size()
+         << " % already done" << endl;
+    if (deserialized_benchmarks.size() == benchmarks.size() &&
+        first_benchmark_to_run > 0 &&
+        first_benchmark_to_run < benchmarks.size())
+    {
+      use_deserialized_benchmarks = true;
+    }
+  }
+
+  if (use_deserialized_benchmarks) {
+    benchmarks = deserialized_benchmarks;
+  } else {
+    // not using deserialized benchmarks, starting from scratch
+    first_benchmark_to_run = 0;
+
+    // Randomly shuffling benchmarks allows us to get accurate enough progress info,
+    // as now the cheap/expensive benchmarks are randomly mixed so they average out.
+    // It also means that if data is corrupted for some time span, the odds are that
+    // not all repetitions of a given benchmark will be corrupted.
+    random_shuffle(benchmarks.begin(), benchmarks.end());
+  }
+
+  for (int i = 0; i < 4; i++) {
+    max_clock_speed = max(max_clock_speed, measure_clock_speed());
+  }
+  
+  double time_start = 0.0;
+  while (first_benchmark_to_run < benchmarks.size()) {
+    if (first_benchmark_to_run == 0) {
+      time_start = timer.getRealTime();
+    }
+    try_run_some_benchmarks(benchmarks,
+                            time_start,
+                            first_benchmark_to_run);
+  }
+
+  // Sort timings by increasing benchmark parameters, and decreasing gflops.
+  // The latter is very important. It means that we can ignore all but the first
+  // benchmark with given parameters.
+  sort(benchmarks.begin(), benchmarks.end());
+
+  // Collect best (i.e. now first) results for each parameter values.
+  vector<benchmark_t> best_benchmarks;
+  for (auto it = benchmarks.begin(); it != benchmarks.end(); ++it) {
+    if (best_benchmarks.empty() ||
+        best_benchmarks.back().compact_product_size != it->compact_product_size ||
+        best_benchmarks.back().compact_block_size != it->compact_block_size)
+    {
+      best_benchmarks.push_back(*it);
+    }
+  }
+
+  // keep and return only the best benchmarks
+  benchmarks = best_benchmarks;
+}
+
+struct measure_all_pot_sizes_action_t : action_t
+{
+  virtual const char* invokation_name() const { return "all-pot-sizes"; }
+  virtual void run() const
+  {
+    vector<benchmark_t> benchmarks;
+    for (int repetition = 0; repetition < measurement_repetitions; repetition++) {
+      for (size_t ksize = minsize; ksize <= maxsize; ksize *= 2) {
+        for (size_t msize = minsize; msize <= maxsize; msize *= 2) {
+          for (size_t nsize = minsize; nsize <= maxsize; nsize *= 2) {
+            for (size_t kblock = minsize; kblock <= ksize; kblock *= 2) {
+              for (size_t mblock = minsize; mblock <= msize; mblock *= 2) {
+                for (size_t nblock = minsize; nblock <= nsize; nblock *= 2) {
+                  benchmarks.emplace_back(ksize, msize, nsize, kblock, mblock, nblock);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    run_benchmarks(benchmarks);
+
+    cout << "BEGIN MEASUREMENTS ALL POT SIZES" << endl;
+    for (auto it = benchmarks.begin(); it != benchmarks.end(); ++it) {
+      cout << *it << endl;
+    }
+  }
+};
+
+struct measure_default_sizes_action_t : action_t
+{
+  virtual const char* invokation_name() const { return "default-sizes"; }
+  virtual void run() const
+  {
+    vector<benchmark_t> benchmarks;
+    for (int repetition = 0; repetition < measurement_repetitions; repetition++) {
+      for (size_t ksize = minsize; ksize <= maxsize; ksize *= 2) {
+        for (size_t msize = minsize; msize <= maxsize; msize *= 2) {
+          for (size_t nsize = minsize; nsize <= maxsize; nsize *= 2) {
+            benchmarks.emplace_back(ksize, msize, nsize);
+          }
+        }
+      }
+    }
+
+    run_benchmarks(benchmarks);
+
+    cout << "BEGIN MEASUREMENTS DEFAULT SIZES" << endl;
+    for (auto it = benchmarks.begin(); it != benchmarks.end(); ++it) {
+      cout << *it << endl;
+    }
+  }
+};
+
+int main(int argc, char* argv[])
+{
+  double time_start = timer.getRealTime();
+  cout.precision(4);
+  cerr.precision(4);
+
+  vector<unique_ptr<action_t>> available_actions;
+  available_actions.emplace_back(new measure_all_pot_sizes_action_t);
+  available_actions.emplace_back(new measure_default_sizes_action_t);
+
+  auto action = available_actions.end();
+
+  if (argc <= 1) {
+    show_usage_and_exit(argc, argv, available_actions);
+  }
+  for (auto it = available_actions.begin(); it != available_actions.end(); ++it) {
+    if (!strcmp(argv[1], (*it)->invokation_name())) {
+      action = it;
+      break;
+    }
+  }
+
+  if (action == available_actions.end()) {
+    show_usage_and_exit(argc, argv, available_actions);
+  }
+
+  for (int i = 2; i < argc; i++) {
+    if (argv[i] == strstr(argv[i], "--min-working-set-size=")) {
+      const char* equals_sign = strchr(argv[i], '=');
+      min_working_set_size = strtoul(equals_sign+1, nullptr, 10);
+    } else {
+      cerr << "unrecognized option: " << argv[i] << endl << endl;
+      show_usage_and_exit(argc, argv, available_actions);
+    }
+  }
+
+  print_cpuinfo();
+
+  cout << "benchmark parameters:" << endl;
+  cout << "pointer size: " << 8*sizeof(void*) << " bits" << endl;
+  cout << "scalar type: " << type_name<Scalar>() << endl;
+  cout << "packet size: " << internal::packet_traits<MatrixType::Scalar>::size << endl;
+  cout << "minsize = " << minsize << endl;
+  cout << "maxsize = " << maxsize << endl;
+  cout << "measurement_repetitions = " << measurement_repetitions << endl;
+  cout << "min_accurate_time = " << min_accurate_time << endl;
+  cout << "min_working_set_size = " << min_working_set_size;
+  if (min_working_set_size == 0) {
+    cout << " (try to outsize caches)";
+  }
+  cout << endl << endl;
+
+  (*action)->run();
+
+  double time_end = timer.getRealTime();
+  cerr << "Finished in " << human_duration_t(time_end - time_start) << endl;
+}
