@@ -98,3 +98,10 @@ add_subdirectory(libs/BLAS)
 add_subdirectory(libs/ublas)
 add_subdirectory(libs/gmm)
 add_subdirectory(libs/mtl4)
+add_subdirectory(libs/blitz)
+add_subdirectory(libs/tvmet)
+add_subdirectory(libs/STL)
+add_subdirectory(libs/blaze)
+
+add_subdirectory(data)
+
