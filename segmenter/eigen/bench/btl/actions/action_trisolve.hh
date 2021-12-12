@@ -1,7 +1,7 @@
+
 //=====================================================
-// File   :  action_syr2.hh
-// Author :  L. Plagne <laurent.plagne@edf.fr)>
-// Copyright (C) EDF R&D,  lun sep 30 14:23:19 CEST 2002
+// File   :  action_trisolve.hh
+// Copyright (C) 2008 Gael Guennebaud <gael.guennebaud@inria.fr>
 //=====================================================
 //
 // This program is free software; you can redistribute it and/or
@@ -17,8 +17,8 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //
-#ifndef ACTION_SYR2
-#define ACTION_SYR2
+#ifndef ACTION_TRISOLVE
+#define ACTION_TRISOLVE
 #include "utilities.h"
 #include "STL_interface.hh"
 #include <string>
@@ -29,105 +29,110 @@
 using namespace std;
 
 template<class Interface>
-class Action_syr2 {
+class Action_trisolve {
 
 public :
 
   // Ctor
 
-  BTL_DONT_INLINE Action_syr2( int size ):_size(size)
+  Action_trisolve( int size ):_size(size)
   {
-    // STL matrix and vector initialization
-    typename Interface::stl_matrix tmp;
-    init_matrix<pseudo_random>(A_stl,_size);
+    MESSAGE("Action_trisolve Ctor");
+
+    // STL vector initialization
+    init_matrix<pseudo_random>(L_stl,_size);
     init_vector<pseudo_random>(B_stl,_size);
-    init_vector<pseudo_random>(X_stl,_size);
+    init_vector<null_function>(X_stl,_size);
+    for (int j=0; j<_size; ++j)
+    {
+      for (int i=0; i<j; ++i)
+        L_stl[j][i] = 0;
+      L_stl[j][j] += 3;
+    }
+
     init_vector<null_function>(resu_stl,_size);
 
     // generic matrix and vector initialization
-    Interface::matrix_from_stl(A_ref,A_stl);
-    Interface::matrix_from_stl(A,A_stl);
-    Interface::vector_from_stl(B_ref,B_stl);
-    Interface::vector_from_stl(B,B_stl);
-    Interface::vector_from_stl(X_ref,X_stl);
+    Interface::matrix_from_stl(L,L_stl);
     Interface::vector_from_stl(X,X_stl);
+    Interface::vector_from_stl(B,B_stl);
+
+    _cost = 0;
+    for (int j=0; j<_size; ++j)
+    {
+      _cost += 2*j + 1;
+    }
   }
 
   // invalidate copy ctor
-  Action_syr2( const  Action_syr2 & )
+
+  Action_trisolve( const  Action_trisolve & )
   {
-    INFOS("illegal call to Action_syr2 Copy Ctor");
+    INFOS("illegal call to Action_trisolve Copy Ctor");
     exit(1);
   }
 
   // Dtor
-  BTL_DONT_INLINE ~Action_syr2( void ){
-    Interface::free_matrix(A,_size);
+
+  ~Action_trisolve( void ){
+
+    MESSAGE("Action_trisolve Dtor");
+
+    // deallocation
+    Interface::free_matrix(L,_size);
     Interface::free_vector(B);
     Interface::free_vector(X);
-    Interface::free_matrix(A_ref,_size);
-    Interface::free_vector(B_ref);
-    Interface::free_vector(X_ref);
   }
 
   // action name
 
   static inline std::string name( void )
   {
-    return "syr2_" + Interface::name();
+    return "trisolve_vector_"+Interface::name();
   }
 
   double nb_op_base( void ){
-    return 2.0*_size*_size;
+    return _cost;
   }
 
-  BTL_DONT_INLINE  void initialize( void ){
-    Interface::copy_matrix(A_ref,A,_size);
-    Interface::copy_vector(B_ref,B,_size);
-    Interface::copy_vector(X_ref,X,_size);
+  inline void initialize( void ){
+    //Interface::copy_vector(X_ref,X,_size);
   }
 
-  BTL_DONT_INLINE void calculate( void ) {
-      BTL_ASM_COMMENT("#begin syr2");
-      Interface::syr2(A,B,X,_size);
-      BTL_ASM_COMMENT("end syr2");
+  inline void calculate( void ) {
+      Interface::trisolve_lower(L,B,X,_size);
   }
 
-  BTL_DONT_INLINE void check_result( void ){
+  void check_result(){
+    if (_size>128) return;
     // calculation check
     Interface::vector_to_stl(X,resu_stl);
 
-    STL_interface<typename Interface::real_type>::syr2(A_stl,B_stl,X_stl,_size);
+    STL_interface<typename Interface::real_type>::trisolve_lower(L_stl,B_stl,X_stl,_size);
 
     typename Interface::real_type error=
       STL_interface<typename Interface::real_type>::norm_diff(X_stl,resu_stl);
 
-    if (error>1.e-3){
+    if (error>1.e-4){
       INFOS("WRONG CALCULATION...residual=" << error);
-//       exit(0);
-    }
+      exit(2);
+    } //else INFOS("CALCULATION OK...residual=" << error);
 
   }
 
 private :
 
-  typename Interface::stl_matrix A_stl;
-  typename Interface::stl_vector B_stl;
+  typename Interface::stl_matrix L_stl;
   typename Interface::stl_vector X_stl;
+  typename Interface::stl_vector B_stl;
   typename Interface::stl_vector resu_stl;
 
-  typename Interface::gene_matrix A_ref;
-  typename Interface::gene_vector B_ref;
-  typename Interface::gene_vector X_ref;
-
-  typename Interface::gene_matrix A;
-  typename Interface::gene_vector B;
+  typename Interface::gene_matrix L;
   typename Interface::gene_vector X;
-
+  typename Interface::gene_vector B;
 
   int _size;
-
+  double _cost;
 };
-
 
 #endif
