@@ -60,4 +60,14 @@ int main()
   bench<Action_partial_lu<blas_interface<REAL_TYPE> > >(MIN_LU,MAX_LU,NB_POINT);
 
   #ifdef HAS_LAPACK
-//   bench<Action_lu_decom
+//   bench<Action_lu_decomp<blas_interface<REAL_TYPE> > >(MIN_LU,MAX_LU,NB_POINT);
+  bench<Action_hessenberg<blas_interface<REAL_TYPE> > >(MIN_LU,MAX_LU,NB_POINT);
+  bench<Action_tridiagonalization<blas_interface<REAL_TYPE> > >(MIN_LU,MAX_LU,NB_POINT);
+  #endif
+
+  //bench<Action_lu_solve<blas_LU_solve_interface<REAL_TYPE> > >(MIN_LU,MAX_LU,NB_POINT);
+
+  return 0;
+}
+
+
