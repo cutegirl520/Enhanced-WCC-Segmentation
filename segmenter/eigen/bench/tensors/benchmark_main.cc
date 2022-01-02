@@ -222,4 +222,16 @@ int main(int argc, char* argv[]) {
         fflush(stdout);
         need_header = false;
       }
-     
+      b->Run();
+    }
+  }
+  if (need_header) {
+    fprintf(stderr, "No matching benchmarks!\n");
+    fprintf(stderr, "Available benchmarks:\n");
+    for (BenchmarkMapIt it = gBenchmarks().begin(); it != gBenchmarks().end(); ++it) {
+      fprintf(stderr, "  %s\n", it->second->Name());
+    }
+    exit(EXIT_FAILURE);
+  }
+  return 0;
+}
