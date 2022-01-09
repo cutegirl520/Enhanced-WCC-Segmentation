@@ -26,3 +26,30 @@ if (EIGEN_Fortran_COMPILER_WORKS)
   set(EigenBlas_SRCS ${EigenBlas_SRCS} fortran/complexdots.f)
 else()
   set(EigenBlas_SRCS ${EigenBlas_SRCS} f2c/complexdots.c)
+endif()
+
+add_library(eigen_blas_static ${EigenBlas_SRCS})
+add_library(eigen_blas SHARED ${EigenBlas_SRCS})
+
+if(EIGEN_STANDARD_LIBRARIES_TO_LINK_TO)
+  target_link_libraries(eigen_blas_static ${EIGEN_STANDARD_LIBRARIES_TO_LINK_TO})
+  target_link_libraries(eigen_blas        ${EIGEN_STANDARD_LIBRARIES_TO_LINK_TO})
+endif()
+
+add_dependencies(blas eigen_blas eigen_blas_static)
+
+install(TARGETS eigen_blas eigen_blas_static
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib)
+
+if(EIGEN_Fortran_COMPILER_WORKS)
+
+if(EIGEN_LEAVE_TEST_IN_ALL_TARGET)
+  add_subdirectory(testing) # can't do EXCLUDE_FROM_ALL here, breaks CTest
+else()
+  add_subdirectory(testing EXCLUDE_FROM_ALL)
+endif()
+
+endif()
+
