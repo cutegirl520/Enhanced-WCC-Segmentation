@@ -130,4 +130,34 @@ Map<Matrix<T,Dynamic,1> > make_vector(T* data, int size)
 }
 
 template<typename T>
-Map<const Matrix<T,Dynamic,1> > make_vector(const T* data, int siz
+Map<const Matrix<T,Dynamic,1> > make_vector(const T* data, int size)
+{
+  return Map<const Matrix<T,Dynamic,1> >(data, size);
+}
+
+template<typename T>
+T* get_compact_vector(T* x, int n, int incx)
+{
+  if(incx==1)
+    return x;
+
+  typename Eigen::internal::remove_const<T>::type* ret = new Scalar[n];
+  if(incx<0) make_vector(ret,n) = make_vector(x,n,-incx).reverse();
+  else       make_vector(ret,n) = make_vector(x,n, incx);
+  return ret;
+}
+
+template<typename T>
+T* copy_back(T* x_cpy, T* x, int n, int incx)
+{
+  if(x_cpy==x)
+    return 0;
+
+  if(incx<0) make_vector(x,n,-incx).reverse() = make_vector(x_cpy,n);
+  else       make_vector(x,n, incx)           = make_vector(x_cpy,n);
+  return x_cpy;
+}
+
+#define EIGEN_BLAS_FUNC(X) EIGEN_CAT(SCALAR_SUFFIX,X##_)
+
+#endif // EIGEN_BLAS_COMMON_H
