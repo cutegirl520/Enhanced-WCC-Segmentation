@@ -343,4 +343,145 @@
 		    i__2 = iy;
 		    i__5 = l + i__ + j * a_dim1;
 		    q__2.r = temp1.r * a[i__5].r - temp1.i * a[i__5].i, 
-			    q__2.i = temp1.r * a[i__5].i + temp1.i * a[i
+			    q__2.i = temp1.r * a[i__5].i + temp1.i * a[i__5]
+			    .r;
+		    q__1.r = y[i__2].r + q__2.r, q__1.i = y[i__2].i + q__2.i;
+		    y[i__4].r = q__1.r, y[i__4].i = q__1.i;
+		    r_cnjg(&q__3, &a[l + i__ + j * a_dim1]);
+		    i__4 = ix;
+		    q__2.r = q__3.r * x[i__4].r - q__3.i * x[i__4].i, q__2.i =
+			     q__3.r * x[i__4].i + q__3.i * x[i__4].r;
+		    q__1.r = temp2.r + q__2.r, q__1.i = temp2.i + q__2.i;
+		    temp2.r = q__1.r, temp2.i = q__1.i;
+		    ix += *incx;
+		    iy += *incy;
+/* L70: */
+		}
+		i__3 = jy;
+		i__4 = jy;
+		i__2 = kplus1 + j * a_dim1;
+		r__1 = a[i__2].r;
+		q__3.r = r__1 * temp1.r, q__3.i = r__1 * temp1.i;
+		q__2.r = y[i__4].r + q__3.r, q__2.i = y[i__4].i + q__3.i;
+		q__4.r = alpha->r * temp2.r - alpha->i * temp2.i, q__4.i = 
+			alpha->r * temp2.i + alpha->i * temp2.r;
+		q__1.r = q__2.r + q__4.r, q__1.i = q__2.i + q__4.i;
+		y[i__3].r = q__1.r, y[i__3].i = q__1.i;
+		jx += *incx;
+		jy += *incy;
+		if (j > *k) {
+		    kx += *incx;
+		    ky += *incy;
+		}
+/* L80: */
+	    }
+	}
+    } else {
+
+/*        Form  y  when lower triangle of A is stored. */
+
+	if (*incx == 1 && *incy == 1) {
+	    i__1 = *n;
+	    for (j = 1; j <= i__1; ++j) {
+		i__3 = j;
+		q__1.r = alpha->r * x[i__3].r - alpha->i * x[i__3].i, q__1.i =
+			 alpha->r * x[i__3].i + alpha->i * x[i__3].r;
+		temp1.r = q__1.r, temp1.i = q__1.i;
+		temp2.r = 0.f, temp2.i = 0.f;
+		i__3 = j;
+		i__4 = j;
+		i__2 = j * a_dim1 + 1;
+		r__1 = a[i__2].r;
+		q__2.r = r__1 * temp1.r, q__2.i = r__1 * temp1.i;
+		q__1.r = y[i__4].r + q__2.r, q__1.i = y[i__4].i + q__2.i;
+		y[i__3].r = q__1.r, y[i__3].i = q__1.i;
+		l = 1 - j;
+/* Computing MIN */
+		i__4 = *n, i__2 = j + *k;
+		i__3 = min(i__4,i__2);
+		for (i__ = j + 1; i__ <= i__3; ++i__) {
+		    i__4 = i__;
+		    i__2 = i__;
+		    i__5 = l + i__ + j * a_dim1;
+		    q__2.r = temp1.r * a[i__5].r - temp1.i * a[i__5].i, 
+			    q__2.i = temp1.r * a[i__5].i + temp1.i * a[i__5]
+			    .r;
+		    q__1.r = y[i__2].r + q__2.r, q__1.i = y[i__2].i + q__2.i;
+		    y[i__4].r = q__1.r, y[i__4].i = q__1.i;
+		    r_cnjg(&q__3, &a[l + i__ + j * a_dim1]);
+		    i__4 = i__;
+		    q__2.r = q__3.r * x[i__4].r - q__3.i * x[i__4].i, q__2.i =
+			     q__3.r * x[i__4].i + q__3.i * x[i__4].r;
+		    q__1.r = temp2.r + q__2.r, q__1.i = temp2.i + q__2.i;
+		    temp2.r = q__1.r, temp2.i = q__1.i;
+/* L90: */
+		}
+		i__3 = j;
+		i__4 = j;
+		q__2.r = alpha->r * temp2.r - alpha->i * temp2.i, q__2.i = 
+			alpha->r * temp2.i + alpha->i * temp2.r;
+		q__1.r = y[i__4].r + q__2.r, q__1.i = y[i__4].i + q__2.i;
+		y[i__3].r = q__1.r, y[i__3].i = q__1.i;
+/* L100: */
+	    }
+	} else {
+	    jx = kx;
+	    jy = ky;
+	    i__1 = *n;
+	    for (j = 1; j <= i__1; ++j) {
+		i__3 = jx;
+		q__1.r = alpha->r * x[i__3].r - alpha->i * x[i__3].i, q__1.i =
+			 alpha->r * x[i__3].i + alpha->i * x[i__3].r;
+		temp1.r = q__1.r, temp1.i = q__1.i;
+		temp2.r = 0.f, temp2.i = 0.f;
+		i__3 = jy;
+		i__4 = jy;
+		i__2 = j * a_dim1 + 1;
+		r__1 = a[i__2].r;
+		q__2.r = r__1 * temp1.r, q__2.i = r__1 * temp1.i;
+		q__1.r = y[i__4].r + q__2.r, q__1.i = y[i__4].i + q__2.i;
+		y[i__3].r = q__1.r, y[i__3].i = q__1.i;
+		l = 1 - j;
+		ix = jx;
+		iy = jy;
+/* Computing MIN */
+		i__4 = *n, i__2 = j + *k;
+		i__3 = min(i__4,i__2);
+		for (i__ = j + 1; i__ <= i__3; ++i__) {
+		    ix += *incx;
+		    iy += *incy;
+		    i__4 = iy;
+		    i__2 = iy;
+		    i__5 = l + i__ + j * a_dim1;
+		    q__2.r = temp1.r * a[i__5].r - temp1.i * a[i__5].i, 
+			    q__2.i = temp1.r * a[i__5].i + temp1.i * a[i__5]
+			    .r;
+		    q__1.r = y[i__2].r + q__2.r, q__1.i = y[i__2].i + q__2.i;
+		    y[i__4].r = q__1.r, y[i__4].i = q__1.i;
+		    r_cnjg(&q__3, &a[l + i__ + j * a_dim1]);
+		    i__4 = ix;
+		    q__2.r = q__3.r * x[i__4].r - q__3.i * x[i__4].i, q__2.i =
+			     q__3.r * x[i__4].i + q__3.i * x[i__4].r;
+		    q__1.r = temp2.r + q__2.r, q__1.i = temp2.i + q__2.i;
+		    temp2.r = q__1.r, temp2.i = q__1.i;
+/* L110: */
+		}
+		i__3 = jy;
+		i__4 = jy;
+		q__2.r = alpha->r * temp2.r - alpha->i * temp2.i, q__2.i = 
+			alpha->r * temp2.i + alpha->i * temp2.r;
+		q__1.r = y[i__4].r + q__2.r, q__1.i = y[i__4].i + q__2.i;
+		y[i__3].r = q__1.r, y[i__3].i = q__1.i;
+		jx += *incx;
+		jy += *incy;
+/* L120: */
+	    }
+	}
+    }
+
+    return 0;
+
+/*     End of CHBMV . */
+
+} /* chbmv_ */
+
