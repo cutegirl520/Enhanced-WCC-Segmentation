@@ -243,4 +243,51 @@ L170:
 /*              FIX-H.. */
     goto L70;
 L180:
-/
+/* Computing 2nd power */
+    d__1 = gam;
+    *dd2 *= d__1 * d__1;
+    dh21 /= gam;
+    dh22 /= gam;
+    goto L170;
+L190:
+L200:
+    if (! (abs(*dd2) >= gamsq)) {
+	goto L220;
+    }
+    igo = 3;
+    igo_fmt = fmt_210;
+/*              FIX-H.. */
+    goto L70;
+L210:
+/* Computing 2nd power */
+    d__1 = gam;
+    *dd2 /= d__1 * d__1;
+    dh21 *= gam;
+    dh22 *= gam;
+    goto L200;
+L220:
+    if (dflag < 0.) {
+	goto L250;
+    } else if (dflag == 0) {
+	goto L230;
+    } else {
+	goto L240;
+    }
+L230:
+    dparam[3] = dh21;
+    dparam[4] = dh12;
+    goto L260;
+L240:
+    dparam[2] = dh11;
+    dparam[5] = dh22;
+    goto L260;
+L250:
+    dparam[2] = dh11;
+    dparam[3] = dh21;
+    dparam[4] = dh12;
+    dparam[5] = dh22;
+L260:
+    dparam[1] = dflag;
+    return 0;
+} /* drotmg_ */
+
