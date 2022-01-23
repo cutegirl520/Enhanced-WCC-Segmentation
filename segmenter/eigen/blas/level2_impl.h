@@ -492,4 +492,62 @@ int EIGEN_BLAS_FUNC(tpmv)(char *uplo, char *opa, char *diag, int *n, RealScalar 
   *
   *  where b and x are n element vectors and A is an n by n unit, or
   *  non-unit, upper or lower triangular matrix, supplied in packed form.
-  
+  *
+  *  No test for singularity or near-singularity is included in this
+  *  routine. Such tests must be performed before calling this routine.
+  */
+int EIGEN_BLAS_FUNC(tpsv)(char *uplo, char *opa, char *diag, int *n, RealScalar *pap, RealScalar *px, int *incx)
+{
+  typedef void (*functype)(int, const Scalar*, Scalar*);
+  static const functype func[16] = {
+    // array index: NOTR  | (UP << 2) | (NUNIT << 3)
+    (internal::packed_triangular_solve_vector<Scalar,Scalar,int,OnTheLeft, Upper|0,       false,ColMajor>::run),
+    // array index: TR    | (UP << 2) | (NUNIT << 3)
+    (internal::packed_triangular_solve_vector<Scalar,Scalar,int,OnTheLeft, Lower|0,       false,RowMajor>::run),
+    // array index: ADJ   | (UP << 2) | (NUNIT << 3)
+    (internal::packed_triangular_solve_vector<Scalar,Scalar,int,OnTheLeft, Lower|0,       Conj, RowMajor>::run),
+    0,
+    // array index: NOTR  | (LO << 2) | (NUNIT << 3)
+    (internal::packed_triangular_solve_vector<Scalar,Scalar,int,OnTheLeft, Lower|0,       false,ColMajor>::run),
+    // array index: TR    | (LO << 2) | (NUNIT << 3)
+    (internal::packed_triangular_solve_vector<Scalar,Scalar,int,OnTheLeft, Upper|0,       false,RowMajor>::run),
+    // array index: ADJ   | (LO << 2) | (NUNIT << 3)
+    (internal::packed_triangular_solve_vector<Scalar,Scalar,int,OnTheLeft, Upper|0,       Conj, RowMajor>::run),
+    0,
+    // array index: NOTR  | (UP << 2) | (UNIT  << 3)
+    (internal::packed_triangular_solve_vector<Scalar,Scalar,int,OnTheLeft, Upper|UnitDiag,false,ColMajor>::run),
+    // array index: TR    | (UP << 2) | (UNIT  << 3)
+    (internal::packed_triangular_solve_vector<Scalar,Scalar,int,OnTheLeft, Lower|UnitDiag,false,RowMajor>::run),
+    // array index: ADJ   | (UP << 2) | (UNIT  << 3)
+    (internal::packed_triangular_solve_vector<Scalar,Scalar,int,OnTheLeft, Lower|UnitDiag,Conj, RowMajor>::run),
+    0,
+    // array index: NOTR  | (LO << 2) | (UNIT  << 3)
+    (internal::packed_triangular_solve_vector<Scalar,Scalar,int,OnTheLeft, Lower|UnitDiag,false,ColMajor>::run),
+    // array index: TR    | (LO << 2) | (UNIT  << 3)
+    (internal::packed_triangular_solve_vector<Scalar,Scalar,int,OnTheLeft, Upper|UnitDiag,false,RowMajor>::run),
+    // array index: ADJ   | (LO << 2) | (UNIT  << 3)
+    (internal::packed_triangular_solve_vector<Scalar,Scalar,int,OnTheLeft, Upper|UnitDiag,Conj, RowMajor>::run),
+    0
+  };
+
+  Scalar* ap = reinterpret_cast<Scalar*>(pap);
+  Scalar* x = reinterpret_cast<Scalar*>(px);
+
+  int info = 0;
+  if(UPLO(*uplo)==INVALID)                                            info = 1;
+  else if(OP(*opa)==INVALID)                                          info = 2;
+  else if(DIAG(*diag)==INVALID)                                       info = 3;
+  else if(*n<0)                                                       info = 4;
+  else if(*incx==0)                                                   info = 7;
+  if(info)
+    return xerbla_(SCALAR_SUFFIX_UP"TPSV ",&info,6);
+
+  Scalar* actual_x = get_compact_vector(x,*n,*incx);
+
+  int code = OP(*opa) | (UPLO(*uplo) << 2) | (DIAG(*diag) << 3);
+  func[code](*n, ap, actual_x);
+
+  if(actual_x!=x) delete[] copy_back(actual_x,x,*n,*incx);
+
+  return 1;
+}
