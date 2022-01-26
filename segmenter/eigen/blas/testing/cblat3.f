@@ -334,4 +334,313 @@
      $                  CC, CS, CT, G )
             GO TO 190
 *           Test CTRMM, 04, CTRSM, 05.
-  160       CALL CCH
+  160       CALL CCHK3( SNAMES( ISNUM ), EPS, THRESH, NOUT, NTRA, TRACE,
+     $                  REWI, FATAL, NIDIM, IDIM, NALF, ALF, NMAX, AB,
+     $                  AA, AS, AB( 1, NMAX + 1 ), BB, BS, CT, G, C )
+            GO TO 190
+*           Test CHERK, 06, CSYRK, 07.
+  170       CALL CCHK4( SNAMES( ISNUM ), EPS, THRESH, NOUT, NTRA, TRACE,
+     $                  REWI, FATAL, NIDIM, IDIM, NALF, ALF, NBET, BET,
+     $                  NMAX, AB, AA, AS, AB( 1, NMAX + 1 ), BB, BS, C,
+     $                  CC, CS, CT, G )
+            GO TO 190
+*           Test CHER2K, 08, CSYR2K, 09.
+  180       CALL CCHK5( SNAMES( ISNUM ), EPS, THRESH, NOUT, NTRA, TRACE,
+     $                  REWI, FATAL, NIDIM, IDIM, NALF, ALF, NBET, BET,
+     $                  NMAX, AB, AA, AS, BB, BS, C, CC, CS, CT, G, W )
+            GO TO 190
+*
+  190       IF( FATAL.AND.SFATAL )
+     $         GO TO 210
+         END IF
+  200 CONTINUE
+      WRITE( NOUT, FMT = 9986 )
+      GO TO 230
+*
+  210 CONTINUE
+      WRITE( NOUT, FMT = 9985 )
+      GO TO 230
+*
+  220 CONTINUE
+      WRITE( NOUT, FMT = 9991 )
+*
+  230 CONTINUE
+      IF( TRACE )
+     $   CLOSE ( NTRA )
+      CLOSE ( NOUT )
+      STOP
+*
+ 9999 FORMAT( ' ROUTINES PASS COMPUTATIONAL TESTS IF TEST RATIO IS LES',
+     $      'S THAN', F8.2 )
+ 9998 FORMAT( ' RELATIVE MACHINE PRECISION IS TAKEN TO BE', 1P, E9.1 )
+ 9997 FORMAT( ' NUMBER OF VALUES OF ', A, ' IS LESS THAN 1 OR GREATER ',
+     $      'THAN ', I2 )
+ 9996 FORMAT( ' VALUE OF N IS LESS THAN 0 OR GREATER THAN ', I2 )
+ 9995 FORMAT( ' TESTS OF THE COMPLEX          LEVEL 3 BLAS', //' THE F',
+     $      'OLLOWING PARAMETER VALUES WILL BE USED:' )
+ 9994 FORMAT( '   FOR N              ', 9I6 )
+ 9993 FORMAT( '   FOR ALPHA          ',
+     $      7( '(', F4.1, ',', F4.1, ')  ', : ) )
+ 9992 FORMAT( '   FOR BETA           ',
+     $      7( '(', F4.1, ',', F4.1, ')  ', : ) )
+ 9991 FORMAT( ' AMEND DATA FILE OR INCREASE ARRAY SIZES IN PROGRAM',
+     $      /' ******* TESTS ABANDONED *******' )
+ 9990 FORMAT( ' SUBPROGRAM NAME ', A6, ' NOT RECOGNIZED', /' ******* T',
+     $      'ESTS ABANDONED *******' )
+ 9989 FORMAT( ' ERROR IN CMMCH -  IN-LINE DOT PRODUCTS ARE BEING EVALU',
+     $      'ATED WRONGLY.', /' CMMCH WAS CALLED WITH TRANSA = ', A1,
+     $      ' AND TRANSB = ', A1, /' AND RETURNED SAME = ', L1, ' AND ',
+     $      'ERR = ', F12.3, '.', /' THIS MAY BE DUE TO FAULTS IN THE ',
+     $      'ARITHMETIC OR THE COMPILER.', /' ******* TESTS ABANDONED ',
+     $      '*******' )
+ 9988 FORMAT( A6, L2 )
+ 9987 FORMAT( 1X, A6, ' WAS NOT TESTED' )
+ 9986 FORMAT( /' END OF TESTS' )
+ 9985 FORMAT( /' ******* FATAL ERROR - TESTS ABANDONED *******' )
+ 9984 FORMAT( ' ERROR-EXITS WILL NOT BE TESTED' )
+*
+*     End of CBLAT3.
+*
+      END
+      SUBROUTINE CCHK1( SNAME, EPS, THRESH, NOUT, NTRA, TRACE, REWI,
+     $                  FATAL, NIDIM, IDIM, NALF, ALF, NBET, BET, NMAX,
+     $                  A, AA, AS, B, BB, BS, C, CC, CS, CT, G )
+*
+*  Tests CGEMM.
+*
+*  Auxiliary routine for test program for Level 3 Blas.
+*
+*  -- Written on 8-February-1989.
+*     Jack Dongarra, Argonne National Laboratory.
+*     Iain Duff, AERE Harwell.
+*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+*     Sven Hammarling, Numerical Algorithms Group Ltd.
+*
+*     .. Parameters ..
+      COMPLEX            ZERO
+      PARAMETER          ( ZERO = ( 0.0, 0.0 ) )
+      REAL               RZERO
+      PARAMETER          ( RZERO = 0.0 )
+*     .. Scalar Arguments ..
+      REAL               EPS, THRESH
+      INTEGER            NALF, NBET, NIDIM, NMAX, NOUT, NTRA
+      LOGICAL            FATAL, REWI, TRACE
+      CHARACTER*6        SNAME
+*     .. Array Arguments ..
+      COMPLEX            A( NMAX, NMAX ), AA( NMAX*NMAX ), ALF( NALF ),
+     $                   AS( NMAX*NMAX ), B( NMAX, NMAX ),
+     $                   BB( NMAX*NMAX ), BET( NBET ), BS( NMAX*NMAX ),
+     $                   C( NMAX, NMAX ), CC( NMAX*NMAX ),
+     $                   CS( NMAX*NMAX ), CT( NMAX )
+      REAL               G( NMAX )
+      INTEGER            IDIM( NIDIM )
+*     .. Local Scalars ..
+      COMPLEX            ALPHA, ALS, BETA, BLS
+      REAL               ERR, ERRMAX
+      INTEGER            I, IA, IB, ICA, ICB, IK, IM, IN, K, KS, LAA,
+     $                   LBB, LCC, LDA, LDAS, LDB, LDBS, LDC, LDCS, M,
+     $                   MA, MB, MS, N, NA, NARGS, NB, NC, NS
+      LOGICAL            NULL, RESET, SAME, TRANA, TRANB
+      CHARACTER*1        TRANAS, TRANBS, TRANSA, TRANSB
+      CHARACTER*3        ICH
+*     .. Local Arrays ..
+      LOGICAL            ISAME( 13 )
+*     .. External Functions ..
+      LOGICAL            LCE, LCERES
+      EXTERNAL           LCE, LCERES
+*     .. External Subroutines ..
+      EXTERNAL           CGEMM, CMAKE, CMMCH
+*     .. Intrinsic Functions ..
+      INTRINSIC          MAX
+*     .. Scalars in Common ..
+      INTEGER            INFOT, NOUTC
+      LOGICAL            LERR, OK
+*     .. Common blocks ..
+      COMMON             /INFOC/INFOT, NOUTC, OK, LERR
+*     .. Data statements ..
+      DATA               ICH/'NTC'/
+*     .. Executable Statements ..
+*
+      NARGS = 13
+      NC = 0
+      RESET = .TRUE.
+      ERRMAX = RZERO
+*
+      DO 110 IM = 1, NIDIM
+         M = IDIM( IM )
+*
+         DO 100 IN = 1, NIDIM
+            N = IDIM( IN )
+*           Set LDC to 1 more than minimum value if room.
+            LDC = M
+            IF( LDC.LT.NMAX )
+     $         LDC = LDC + 1
+*           Skip tests if not enough room.
+            IF( LDC.GT.NMAX )
+     $         GO TO 100
+            LCC = LDC*N
+            NULL = N.LE.0.OR.M.LE.0
+*
+            DO 90 IK = 1, NIDIM
+               K = IDIM( IK )
+*
+               DO 80 ICA = 1, 3
+                  TRANSA = ICH( ICA: ICA )
+                  TRANA = TRANSA.EQ.'T'.OR.TRANSA.EQ.'C'
+*
+                  IF( TRANA )THEN
+                     MA = K
+                     NA = M
+                  ELSE
+                     MA = M
+                     NA = K
+                  END IF
+*                 Set LDA to 1 more than minimum value if room.
+                  LDA = MA
+                  IF( LDA.LT.NMAX )
+     $               LDA = LDA + 1
+*                 Skip tests if not enough room.
+                  IF( LDA.GT.NMAX )
+     $               GO TO 80
+                  LAA = LDA*NA
+*
+*                 Generate the matrix A.
+*
+                  CALL CMAKE( 'GE', ' ', ' ', MA, NA, A, NMAX, AA, LDA,
+     $                        RESET, ZERO )
+*
+                  DO 70 ICB = 1, 3
+                     TRANSB = ICH( ICB: ICB )
+                     TRANB = TRANSB.EQ.'T'.OR.TRANSB.EQ.'C'
+*
+                     IF( TRANB )THEN
+                        MB = N
+                        NB = K
+                     ELSE
+                        MB = K
+                        NB = N
+                     END IF
+*                    Set LDB to 1 more than minimum value if room.
+                     LDB = MB
+                     IF( LDB.LT.NMAX )
+     $                  LDB = LDB + 1
+*                    Skip tests if not enough room.
+                     IF( LDB.GT.NMAX )
+     $                  GO TO 70
+                     LBB = LDB*NB
+*
+*                    Generate the matrix B.
+*
+                     CALL CMAKE( 'GE', ' ', ' ', MB, NB, B, NMAX, BB,
+     $                           LDB, RESET, ZERO )
+*
+                     DO 60 IA = 1, NALF
+                        ALPHA = ALF( IA )
+*
+                        DO 50 IB = 1, NBET
+                           BETA = BET( IB )
+*
+*                          Generate the matrix C.
+*
+                           CALL CMAKE( 'GE', ' ', ' ', M, N, C, NMAX,
+     $                                 CC, LDC, RESET, ZERO )
+*
+                           NC = NC + 1
+*
+*                          Save every datum before calling the
+*                          subroutine.
+*
+                           TRANAS = TRANSA
+                           TRANBS = TRANSB
+                           MS = M
+                           NS = N
+                           KS = K
+                           ALS = ALPHA
+                           DO 10 I = 1, LAA
+                              AS( I ) = AA( I )
+   10                      CONTINUE
+                           LDAS = LDA
+                           DO 20 I = 1, LBB
+                              BS( I ) = BB( I )
+   20                      CONTINUE
+                           LDBS = LDB
+                           BLS = BETA
+                           DO 30 I = 1, LCC
+                              CS( I ) = CC( I )
+   30                      CONTINUE
+                           LDCS = LDC
+*
+*                          Call the subroutine.
+*
+                           IF( TRACE )
+     $                        WRITE( NTRA, FMT = 9995 )NC, SNAME,
+     $                        TRANSA, TRANSB, M, N, K, ALPHA, LDA, LDB,
+     $                        BETA, LDC
+                           IF( REWI )
+     $                        REWIND NTRA
+                           CALL CGEMM( TRANSA, TRANSB, M, N, K, ALPHA,
+     $                                 AA, LDA, BB, LDB, BETA, CC, LDC )
+*
+*                          Check if error-exit was taken incorrectly.
+*
+                           IF( .NOT.OK )THEN
+                              WRITE( NOUT, FMT = 9994 )
+                              FATAL = .TRUE.
+                              GO TO 120
+                           END IF
+*
+*                          See what data changed inside subroutines.
+*
+                           ISAME( 1 ) = TRANSA.EQ.TRANAS
+                           ISAME( 2 ) = TRANSB.EQ.TRANBS
+                           ISAME( 3 ) = MS.EQ.M
+                           ISAME( 4 ) = NS.EQ.N
+                           ISAME( 5 ) = KS.EQ.K
+                           ISAME( 6 ) = ALS.EQ.ALPHA
+                           ISAME( 7 ) = LCE( AS, AA, LAA )
+                           ISAME( 8 ) = LDAS.EQ.LDA
+                           ISAME( 9 ) = LCE( BS, BB, LBB )
+                           ISAME( 10 ) = LDBS.EQ.LDB
+                           ISAME( 11 ) = BLS.EQ.BETA
+                           IF( NULL )THEN
+                              ISAME( 12 ) = LCE( CS, CC, LCC )
+                           ELSE
+                              ISAME( 12 ) = LCERES( 'GE', ' ', M, N, CS,
+     $                                      CC, LDC )
+                           END IF
+                           ISAME( 13 ) = LDCS.EQ.LDC
+*
+*                          If data was incorrectly changed, report
+*                          and return.
+*
+                           SAME = .TRUE.
+                           DO 40 I = 1, NARGS
+                              SAME = SAME.AND.ISAME( I )
+                              IF( .NOT.ISAME( I ) )
+     $                           WRITE( NOUT, FMT = 9998 )I
+   40                      CONTINUE
+                           IF( .NOT.SAME )THEN
+                              FATAL = .TRUE.
+                              GO TO 120
+                           END IF
+*
+                           IF( .NOT.NULL )THEN
+*
+*                             Check the result.
+*
+                              CALL CMMCH( TRANSA, TRANSB, M, N, K,
+     $                                    ALPHA, A, NMAX, B, NMAX, BETA,
+     $                                    C, NMAX, CT, G, CC, LDC, EPS,
+     $                                    ERR, FATAL, NOUT, .TRUE. )
+                              ERRMAX = MAX( ERRMAX, ERR )
+*                             If got really bad answer, report and
+*                             return.
+                              IF( FATAL )
+     $                           GO TO 120
+                           END IF
+*
+   50                   CONTINUE
+*
+   60                CONTINUE
+*
+ 
