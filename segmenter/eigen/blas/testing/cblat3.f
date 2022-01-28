@@ -976,4 +976,304 @@
 *
 *  -- Written on 8-February-1989.
 *     Jack Dongarra, Argonne National Laboratory.
-*     Iain Duff, AERE Harwel
+*     Iain Duff, AERE Harwell.
+*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+*     Sven Hammarling, Numerical Algorithms Group Ltd.
+*
+*     .. Parameters ..
+      COMPLEX            ZERO, ONE
+      PARAMETER          ( ZERO = ( 0.0, 0.0 ), ONE = ( 1.0, 0.0 ) )
+      REAL               RZERO
+      PARAMETER          ( RZERO = 0.0 )
+*     .. Scalar Arguments ..
+      REAL               EPS, THRESH
+      INTEGER            NALF, NIDIM, NMAX, NOUT, NTRA
+      LOGICAL            FATAL, REWI, TRACE
+      CHARACTER*6        SNAME
+*     .. Array Arguments ..
+      COMPLEX            A( NMAX, NMAX ), AA( NMAX*NMAX ), ALF( NALF ),
+     $                   AS( NMAX*NMAX ), B( NMAX, NMAX ),
+     $                   BB( NMAX*NMAX ), BS( NMAX*NMAX ),
+     $                   C( NMAX, NMAX ), CT( NMAX )
+      REAL               G( NMAX )
+      INTEGER            IDIM( NIDIM )
+*     .. Local Scalars ..
+      COMPLEX            ALPHA, ALS
+      REAL               ERR, ERRMAX
+      INTEGER            I, IA, ICD, ICS, ICT, ICU, IM, IN, J, LAA, LBB,
+     $                   LDA, LDAS, LDB, LDBS, M, MS, N, NA, NARGS, NC,
+     $                   NS
+      LOGICAL            LEFT, NULL, RESET, SAME
+      CHARACTER*1        DIAG, DIAGS, SIDE, SIDES, TRANAS, TRANSA, UPLO,
+     $                   UPLOS
+      CHARACTER*2        ICHD, ICHS, ICHU
+      CHARACTER*3        ICHT
+*     .. Local Arrays ..
+      LOGICAL            ISAME( 13 )
+*     .. External Functions ..
+      LOGICAL            LCE, LCERES
+      EXTERNAL           LCE, LCERES
+*     .. External Subroutines ..
+      EXTERNAL           CMAKE, CMMCH, CTRMM, CTRSM
+*     .. Intrinsic Functions ..
+      INTRINSIC          MAX
+*     .. Scalars in Common ..
+      INTEGER            INFOT, NOUTC
+      LOGICAL            LERR, OK
+*     .. Common blocks ..
+      COMMON             /INFOC/INFOT, NOUTC, OK, LERR
+*     .. Data statements ..
+      DATA               ICHU/'UL'/, ICHT/'NTC'/, ICHD/'UN'/, ICHS/'LR'/
+*     .. Executable Statements ..
+*
+      NARGS = 11
+      NC = 0
+      RESET = .TRUE.
+      ERRMAX = RZERO
+*     Set up zero matrix for CMMCH.
+      DO 20 J = 1, NMAX
+         DO 10 I = 1, NMAX
+            C( I, J ) = ZERO
+   10    CONTINUE
+   20 CONTINUE
+*
+      DO 140 IM = 1, NIDIM
+         M = IDIM( IM )
+*
+         DO 130 IN = 1, NIDIM
+            N = IDIM( IN )
+*           Set LDB to 1 more than minimum value if room.
+            LDB = M
+            IF( LDB.LT.NMAX )
+     $         LDB = LDB + 1
+*           Skip tests if not enough room.
+            IF( LDB.GT.NMAX )
+     $         GO TO 130
+            LBB = LDB*N
+            NULL = M.LE.0.OR.N.LE.0
+*
+            DO 120 ICS = 1, 2
+               SIDE = ICHS( ICS: ICS )
+               LEFT = SIDE.EQ.'L'
+               IF( LEFT )THEN
+                  NA = M
+               ELSE
+                  NA = N
+               END IF
+*              Set LDA to 1 more than minimum value if room.
+               LDA = NA
+               IF( LDA.LT.NMAX )
+     $            LDA = LDA + 1
+*              Skip tests if not enough room.
+               IF( LDA.GT.NMAX )
+     $            GO TO 130
+               LAA = LDA*NA
+*
+               DO 110 ICU = 1, 2
+                  UPLO = ICHU( ICU: ICU )
+*
+                  DO 100 ICT = 1, 3
+                     TRANSA = ICHT( ICT: ICT )
+*
+                     DO 90 ICD = 1, 2
+                        DIAG = ICHD( ICD: ICD )
+*
+                        DO 80 IA = 1, NALF
+                           ALPHA = ALF( IA )
+*
+*                          Generate the matrix A.
+*
+                           CALL CMAKE( 'TR', UPLO, DIAG, NA, NA, A,
+     $                                 NMAX, AA, LDA, RESET, ZERO )
+*
+*                          Generate the matrix B.
+*
+                           CALL CMAKE( 'GE', ' ', ' ', M, N, B, NMAX,
+     $                                 BB, LDB, RESET, ZERO )
+*
+                           NC = NC + 1
+*
+*                          Save every datum before calling the
+*                          subroutine.
+*
+                           SIDES = SIDE
+                           UPLOS = UPLO
+                           TRANAS = TRANSA
+                           DIAGS = DIAG
+                           MS = M
+                           NS = N
+                           ALS = ALPHA
+                           DO 30 I = 1, LAA
+                              AS( I ) = AA( I )
+   30                      CONTINUE
+                           LDAS = LDA
+                           DO 40 I = 1, LBB
+                              BS( I ) = BB( I )
+   40                      CONTINUE
+                           LDBS = LDB
+*
+*                          Call the subroutine.
+*
+                           IF( SNAME( 4: 5 ).EQ.'MM' )THEN
+                              IF( TRACE )
+     $                           WRITE( NTRA, FMT = 9995 )NC, SNAME,
+     $                           SIDE, UPLO, TRANSA, DIAG, M, N, ALPHA,
+     $                           LDA, LDB
+                              IF( REWI )
+     $                           REWIND NTRA
+                              CALL CTRMM( SIDE, UPLO, TRANSA, DIAG, M,
+     $                                    N, ALPHA, AA, LDA, BB, LDB )
+                           ELSE IF( SNAME( 4: 5 ).EQ.'SM' )THEN
+                              IF( TRACE )
+     $                           WRITE( NTRA, FMT = 9995 )NC, SNAME,
+     $                           SIDE, UPLO, TRANSA, DIAG, M, N, ALPHA,
+     $                           LDA, LDB
+                              IF( REWI )
+     $                           REWIND NTRA
+                              CALL CTRSM( SIDE, UPLO, TRANSA, DIAG, M,
+     $                                    N, ALPHA, AA, LDA, BB, LDB )
+                           END IF
+*
+*                          Check if error-exit was taken incorrectly.
+*
+                           IF( .NOT.OK )THEN
+                              WRITE( NOUT, FMT = 9994 )
+                              FATAL = .TRUE.
+                              GO TO 150
+                           END IF
+*
+*                          See what data changed inside subroutines.
+*
+                           ISAME( 1 ) = SIDES.EQ.SIDE
+                           ISAME( 2 ) = UPLOS.EQ.UPLO
+                           ISAME( 3 ) = TRANAS.EQ.TRANSA
+                           ISAME( 4 ) = DIAGS.EQ.DIAG
+                           ISAME( 5 ) = MS.EQ.M
+                           ISAME( 6 ) = NS.EQ.N
+                           ISAME( 7 ) = ALS.EQ.ALPHA
+                           ISAME( 8 ) = LCE( AS, AA, LAA )
+                           ISAME( 9 ) = LDAS.EQ.LDA
+                           IF( NULL )THEN
+                              ISAME( 10 ) = LCE( BS, BB, LBB )
+                           ELSE
+                              ISAME( 10 ) = LCERES( 'GE', ' ', M, N, BS,
+     $                                      BB, LDB )
+                           END IF
+                           ISAME( 11 ) = LDBS.EQ.LDB
+*
+*                          If data was incorrectly changed, report and
+*                          return.
+*
+                           SAME = .TRUE.
+                           DO 50 I = 1, NARGS
+                              SAME = SAME.AND.ISAME( I )
+                              IF( .NOT.ISAME( I ) )
+     $                           WRITE( NOUT, FMT = 9998 )I
+   50                      CONTINUE
+                           IF( .NOT.SAME )THEN
+                              FATAL = .TRUE.
+                              GO TO 150
+                           END IF
+*
+                           IF( .NOT.NULL )THEN
+                              IF( SNAME( 4: 5 ).EQ.'MM' )THEN
+*
+*                                Check the result.
+*
+                                 IF( LEFT )THEN
+                                    CALL CMMCH( TRANSA, 'N', M, N, M,
+     $                                          ALPHA, A, NMAX, B, NMAX,
+     $                                          ZERO, C, NMAX, CT, G,
+     $                                          BB, LDB, EPS, ERR,
+     $                                          FATAL, NOUT, .TRUE. )
+                                 ELSE
+                                    CALL CMMCH( 'N', TRANSA, M, N, N,
+     $                                          ALPHA, B, NMAX, A, NMAX,
+     $                                          ZERO, C, NMAX, CT, G,
+     $                                          BB, LDB, EPS, ERR,
+     $                                          FATAL, NOUT, .TRUE. )
+                                 END IF
+                              ELSE IF( SNAME( 4: 5 ).EQ.'SM' )THEN
+*
+*                                Compute approximation to original
+*                                matrix.
+*
+                                 DO 70 J = 1, N
+                                    DO 60 I = 1, M
+                                       C( I, J ) = BB( I + ( J - 1 )*
+     $                                             LDB )
+                                       BB( I + ( J - 1 )*LDB ) = ALPHA*
+     $                                    B( I, J )
+   60                               CONTINUE
+   70                            CONTINUE
+*
+                                 IF( LEFT )THEN
+                                    CALL CMMCH( TRANSA, 'N', M, N, M,
+     $                                          ONE, A, NMAX, C, NMAX,
+     $                                          ZERO, B, NMAX, CT, G,
+     $                                          BB, LDB, EPS, ERR,
+     $                                          FATAL, NOUT, .FALSE. )
+                                 ELSE
+                                    CALL CMMCH( 'N', TRANSA, M, N, N,
+     $                                          ONE, C, NMAX, A, NMAX,
+     $                                          ZERO, B, NMAX, CT, G,
+     $                                          BB, LDB, EPS, ERR,
+     $                                          FATAL, NOUT, .FALSE. )
+                                 END IF
+                              END IF
+                              ERRMAX = MAX( ERRMAX, ERR )
+*                             If got really bad answer, report and
+*                             return.
+                              IF( FATAL )
+     $                           GO TO 150
+                           END IF
+*
+   80                   CONTINUE
+*
+   90                CONTINUE
+*
+  100             CONTINUE
+*
+  110          CONTINUE
+*
+  120       CONTINUE
+*
+  130    CONTINUE
+*
+  140 CONTINUE
+*
+*     Report result.
+*
+      IF( ERRMAX.LT.THRESH )THEN
+         WRITE( NOUT, FMT = 9999 )SNAME, NC
+      ELSE
+         WRITE( NOUT, FMT = 9997 )SNAME, NC, ERRMAX
+      END IF
+      GO TO 160
+*
+  150 CONTINUE
+      WRITE( NOUT, FMT = 9996 )SNAME
+      WRITE( NOUT, FMT = 9995 )NC, SNAME, SIDE, UPLO, TRANSA, DIAG, M,
+     $   N, ALPHA, LDA, LDB
+*
+  160 CONTINUE
+      RETURN
+*
+ 9999 FORMAT( ' ', A6, ' PASSED THE COMPUTATIONAL TESTS (', I6, ' CALL',
+     $      'S)' )
+ 9998 FORMAT( ' ******* FATAL ERROR - PARAMETER NUMBER ', I2, ' WAS CH',
+     $      'ANGED INCORRECTLY *******' )
+ 9997 FORMAT( ' ', A6, ' COMPLETED THE COMPUTATIONAL TESTS (', I6, ' C',
+     $      'ALLS)', /' ******* BUT WITH MAXIMUM TEST RATIO', F8.2,
+     $      ' - SUSPECT *******' )
+ 9996 FORMAT( ' ******* ', A6, ' FAILED ON CALL NUMBER:' )
+ 9995 FORMAT( 1X, I6, ': ', A6, '(', 4( '''', A1, ''',' ), 2( I3, ',' ),
+     $      '(', F4.1, ',', F4.1, '), A,', I3, ', B,', I3, ')         ',
+     $      '      .' )
+ 9994 FORMAT( ' ******* FATAL ERROR - ERROR-EXIT TAKEN ON VALID CALL *',
+     $      '******' )
+*
+*     End of CCHK3.
+*
+      END
+      SUBROUTINE CCHK4( SNAME, EPS, THRESH, NOUT, NTRA, TRACE, 
