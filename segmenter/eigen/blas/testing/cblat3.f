@@ -2956,4 +2956,361 @@
       CHARACTER*2        TYPE
 *     .. Array Arguments ..
       COMPLEX            A( NMAX, * ), AA( * )
-*     .. Loc
+*     .. Local Scalars ..
+      INTEGER            I, IBEG, IEND, J, JJ
+      LOGICAL            GEN, HER, LOWER, SYM, TRI, UNIT, UPPER
+*     .. External Functions ..
+      COMPLEX            CBEG
+      EXTERNAL           CBEG
+*     .. Intrinsic Functions ..
+      INTRINSIC          CMPLX, CONJG, REAL
+*     .. Executable Statements ..
+      GEN = TYPE.EQ.'GE'
+      HER = TYPE.EQ.'HE'
+      SYM = TYPE.EQ.'SY'
+      TRI = TYPE.EQ.'TR'
+      UPPER = ( HER.OR.SYM.OR.TRI ).AND.UPLO.EQ.'U'
+      LOWER = ( HER.OR.SYM.OR.TRI ).AND.UPLO.EQ.'L'
+      UNIT = TRI.AND.DIAG.EQ.'U'
+*
+*     Generate data in array A.
+*
+      DO 20 J = 1, N
+         DO 10 I = 1, M
+            IF( GEN.OR.( UPPER.AND.I.LE.J ).OR.( LOWER.AND.I.GE.J ) )
+     $          THEN
+               A( I, J ) = CBEG( RESET ) + TRANSL
+               IF( I.NE.J )THEN
+*                 Set some elements to zero
+                  IF( N.GT.3.AND.J.EQ.N/2 )
+     $               A( I, J ) = ZERO
+                  IF( HER )THEN
+                     A( J, I ) = CONJG( A( I, J ) )
+                  ELSE IF( SYM )THEN
+                     A( J, I ) = A( I, J )
+                  ELSE IF( TRI )THEN
+                     A( J, I ) = ZERO
+                  END IF
+               END IF
+            END IF
+   10    CONTINUE
+         IF( HER )
+     $      A( J, J ) = CMPLX( REAL( A( J, J ) ), RZERO )
+         IF( TRI )
+     $      A( J, J ) = A( J, J ) + ONE
+         IF( UNIT )
+     $      A( J, J ) = ONE
+   20 CONTINUE
+*
+*     Store elements in array AS in data structure required by routine.
+*
+      IF( TYPE.EQ.'GE' )THEN
+         DO 50 J = 1, N
+            DO 30 I = 1, M
+               AA( I + ( J - 1 )*LDA ) = A( I, J )
+   30       CONTINUE
+            DO 40 I = M + 1, LDA
+               AA( I + ( J - 1 )*LDA ) = ROGUE
+   40       CONTINUE
+   50    CONTINUE
+      ELSE IF( TYPE.EQ.'HE'.OR.TYPE.EQ.'SY'.OR.TYPE.EQ.'TR' )THEN
+         DO 90 J = 1, N
+            IF( UPPER )THEN
+               IBEG = 1
+               IF( UNIT )THEN
+                  IEND = J - 1
+               ELSE
+                  IEND = J
+               END IF
+            ELSE
+               IF( UNIT )THEN
+                  IBEG = J + 1
+               ELSE
+                  IBEG = J
+               END IF
+               IEND = N
+            END IF
+            DO 60 I = 1, IBEG - 1
+               AA( I + ( J - 1 )*LDA ) = ROGUE
+   60       CONTINUE
+            DO 70 I = IBEG, IEND
+               AA( I + ( J - 1 )*LDA ) = A( I, J )
+   70       CONTINUE
+            DO 80 I = IEND + 1, LDA
+               AA( I + ( J - 1 )*LDA ) = ROGUE
+   80       CONTINUE
+            IF( HER )THEN
+               JJ = J + ( J - 1 )*LDA
+               AA( JJ ) = CMPLX( REAL( AA( JJ ) ), RROGUE )
+            END IF
+   90    CONTINUE
+      END IF
+      RETURN
+*
+*     End of CMAKE.
+*
+      END
+      SUBROUTINE CMMCH( TRANSA, TRANSB, M, N, KK, ALPHA, A, LDA, B, LDB,
+     $                  BETA, C, LDC, CT, G, CC, LDCC, EPS, ERR, FATAL,
+     $                  NOUT, MV )
+*
+*  Checks the results of the computational tests.
+*
+*  Auxiliary routine for test program for Level 3 Blas.
+*
+*  -- Written on 8-February-1989.
+*     Jack Dongarra, Argonne National Laboratory.
+*     Iain Duff, AERE Harwell.
+*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+*     Sven Hammarling, Numerical Algorithms Group Ltd.
+*
+*     .. Parameters ..
+      COMPLEX            ZERO
+      PARAMETER          ( ZERO = ( 0.0, 0.0 ) )
+      REAL               RZERO, RONE
+      PARAMETER          ( RZERO = 0.0, RONE = 1.0 )
+*     .. Scalar Arguments ..
+      COMPLEX            ALPHA, BETA
+      REAL               EPS, ERR
+      INTEGER            KK, LDA, LDB, LDC, LDCC, M, N, NOUT
+      LOGICAL            FATAL, MV
+      CHARACTER*1        TRANSA, TRANSB
+*     .. Array Arguments ..
+      COMPLEX            A( LDA, * ), B( LDB, * ), C( LDC, * ),
+     $                   CC( LDCC, * ), CT( * )
+      REAL               G( * )
+*     .. Local Scalars ..
+      COMPLEX            CL
+      REAL               ERRI
+      INTEGER            I, J, K
+      LOGICAL            CTRANA, CTRANB, TRANA, TRANB
+*     .. Intrinsic Functions ..
+      INTRINSIC          ABS, AIMAG, CONJG, MAX, REAL, SQRT
+*     .. Statement Functions ..
+      REAL               ABS1
+*     .. Statement Function definitions ..
+      ABS1( CL ) = ABS( REAL( CL ) ) + ABS( AIMAG( CL ) )
+*     .. Executable Statements ..
+      TRANA = TRANSA.EQ.'T'.OR.TRANSA.EQ.'C'
+      TRANB = TRANSB.EQ.'T'.OR.TRANSB.EQ.'C'
+      CTRANA = TRANSA.EQ.'C'
+      CTRANB = TRANSB.EQ.'C'
+*
+*     Compute expected result, one column at a time, in CT using data
+*     in A, B and C.
+*     Compute gauges in G.
+*
+      DO 220 J = 1, N
+*
+         DO 10 I = 1, M
+            CT( I ) = ZERO
+            G( I ) = RZERO
+   10    CONTINUE
+         IF( .NOT.TRANA.AND..NOT.TRANB )THEN
+            DO 30 K = 1, KK
+               DO 20 I = 1, M
+                  CT( I ) = CT( I ) + A( I, K )*B( K, J )
+                  G( I ) = G( I ) + ABS1( A( I, K ) )*ABS1( B( K, J ) )
+   20          CONTINUE
+   30       CONTINUE
+         ELSE IF( TRANA.AND..NOT.TRANB )THEN
+            IF( CTRANA )THEN
+               DO 50 K = 1, KK
+                  DO 40 I = 1, M
+                     CT( I ) = CT( I ) + CONJG( A( K, I ) )*B( K, J )
+                     G( I ) = G( I ) + ABS1( A( K, I ) )*
+     $                        ABS1( B( K, J ) )
+   40             CONTINUE
+   50          CONTINUE
+            ELSE
+               DO 70 K = 1, KK
+                  DO 60 I = 1, M
+                     CT( I ) = CT( I ) + A( K, I )*B( K, J )
+                     G( I ) = G( I ) + ABS1( A( K, I ) )*
+     $                        ABS1( B( K, J ) )
+   60             CONTINUE
+   70          CONTINUE
+            END IF
+         ELSE IF( .NOT.TRANA.AND.TRANB )THEN
+            IF( CTRANB )THEN
+               DO 90 K = 1, KK
+                  DO 80 I = 1, M
+                     CT( I ) = CT( I ) + A( I, K )*CONJG( B( J, K ) )
+                     G( I ) = G( I ) + ABS1( A( I, K ) )*
+     $                        ABS1( B( J, K ) )
+   80             CONTINUE
+   90          CONTINUE
+            ELSE
+               DO 110 K = 1, KK
+                  DO 100 I = 1, M
+                     CT( I ) = CT( I ) + A( I, K )*B( J, K )
+                     G( I ) = G( I ) + ABS1( A( I, K ) )*
+     $                        ABS1( B( J, K ) )
+  100             CONTINUE
+  110          CONTINUE
+            END IF
+         ELSE IF( TRANA.AND.TRANB )THEN
+            IF( CTRANA )THEN
+               IF( CTRANB )THEN
+                  DO 130 K = 1, KK
+                     DO 120 I = 1, M
+                        CT( I ) = CT( I ) + CONJG( A( K, I ) )*
+     $                            CONJG( B( J, K ) )
+                        G( I ) = G( I ) + ABS1( A( K, I ) )*
+     $                           ABS1( B( J, K ) )
+  120                CONTINUE
+  130             CONTINUE
+               ELSE
+                  DO 150 K = 1, KK
+                     DO 140 I = 1, M
+                        CT( I ) = CT( I ) + CONJG( A( K, I ) )*B( J, K )
+                        G( I ) = G( I ) + ABS1( A( K, I ) )*
+     $                           ABS1( B( J, K ) )
+  140                CONTINUE
+  150             CONTINUE
+               END IF
+            ELSE
+               IF( CTRANB )THEN
+                  DO 170 K = 1, KK
+                     DO 160 I = 1, M
+                        CT( I ) = CT( I ) + A( K, I )*CONJG( B( J, K ) )
+                        G( I ) = G( I ) + ABS1( A( K, I ) )*
+     $                           ABS1( B( J, K ) )
+  160                CONTINUE
+  170             CONTINUE
+               ELSE
+                  DO 190 K = 1, KK
+                     DO 180 I = 1, M
+                        CT( I ) = CT( I ) + A( K, I )*B( J, K )
+                        G( I ) = G( I ) + ABS1( A( K, I ) )*
+     $                           ABS1( B( J, K ) )
+  180                CONTINUE
+  190             CONTINUE
+               END IF
+            END IF
+         END IF
+         DO 200 I = 1, M
+            CT( I ) = ALPHA*CT( I ) + BETA*C( I, J )
+            G( I ) = ABS1( ALPHA )*G( I ) +
+     $               ABS1( BETA )*ABS1( C( I, J ) )
+  200    CONTINUE
+*
+*        Compute the error ratio for this result.
+*
+         ERR = ZERO
+         DO 210 I = 1, M
+            ERRI = ABS1( CT( I ) - CC( I, J ) )/EPS
+            IF( G( I ).NE.RZERO )
+     $         ERRI = ERRI/G( I )
+            ERR = MAX( ERR, ERRI )
+            IF( ERR*SQRT( EPS ).GE.RONE )
+     $         GO TO 230
+  210    CONTINUE
+*
+  220 CONTINUE
+*
+*     If the loop completes, all results are at least half accurate.
+      GO TO 250
+*
+*     Report fatal error.
+*
+  230 FATAL = .TRUE.
+      WRITE( NOUT, FMT = 9999 )
+      DO 240 I = 1, M
+         IF( MV )THEN
+            WRITE( NOUT, FMT = 9998 )I, CT( I ), CC( I, J )
+         ELSE
+            WRITE( NOUT, FMT = 9998 )I, CC( I, J ), CT( I )
+         END IF
+  240 CONTINUE
+      IF( N.GT.1 )
+     $   WRITE( NOUT, FMT = 9997 )J
+*
+  250 CONTINUE
+      RETURN
+*
+ 9999 FORMAT( ' ******* FATAL ERROR - COMPUTED RESULT IS LESS THAN HAL',
+     $      'F ACCURATE *******', /'                       EXPECTED RE',
+     $      'SULT                    COMPUTED RESULT' )
+ 9998 FORMAT( 1X, I7, 2( '  (', G15.6, ',', G15.6, ')' ) )
+ 9997 FORMAT( '      THESE ARE THE RESULTS FOR COLUMN ', I3 )
+*
+*     End of CMMCH.
+*
+      END
+      LOGICAL FUNCTION LCE( RI, RJ, LR )
+*
+*  Tests if two arrays are identical.
+*
+*  Auxiliary routine for test program for Level 3 Blas.
+*
+*  -- Written on 8-February-1989.
+*     Jack Dongarra, Argonne National Laboratory.
+*     Iain Duff, AERE Harwell.
+*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+*     Sven Hammarling, Numerical Algorithms Group Ltd.
+*
+*     .. Scalar Arguments ..
+      INTEGER            LR
+*     .. Array Arguments ..
+      COMPLEX            RI( * ), RJ( * )
+*     .. Local Scalars ..
+      INTEGER            I
+*     .. Executable Statements ..
+      DO 10 I = 1, LR
+         IF( RI( I ).NE.RJ( I ) )
+     $      GO TO 20
+   10 CONTINUE
+      LCE = .TRUE.
+      GO TO 30
+   20 CONTINUE
+      LCE = .FALSE.
+   30 RETURN
+*
+*     End of LCE.
+*
+      END
+      LOGICAL FUNCTION LCERES( TYPE, UPLO, M, N, AA, AS, LDA )
+*
+*  Tests if selected elements in two arrays are equal.
+*
+*  TYPE is 'GE' or 'HE' or 'SY'.
+*
+*  Auxiliary routine for test program for Level 3 Blas.
+*
+*  -- Written on 8-February-1989.
+*     Jack Dongarra, Argonne National Laboratory.
+*     Iain Duff, AERE Harwell.
+*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+*     Sven Hammarling, Numerical Algorithms Group Ltd.
+*
+*     .. Scalar Arguments ..
+      INTEGER            LDA, M, N
+      CHARACTER*1        UPLO
+      CHARACTER*2        TYPE
+*     .. Array Arguments ..
+      COMPLEX            AA( LDA, * ), AS( LDA, * )
+*     .. Local Scalars ..
+      INTEGER            I, IBEG, IEND, J
+      LOGICAL            UPPER
+*     .. Executable Statements ..
+      UPPER = UPLO.EQ.'U'
+      IF( TYPE.EQ.'GE' )THEN
+         DO 20 J = 1, N
+            DO 10 I = M + 1, LDA
+               IF( AA( I, J ).NE.AS( I, J ) )
+     $            GO TO 70
+   10       CONTINUE
+   20    CONTINUE
+      ELSE IF( TYPE.EQ.'HE'.OR.TYPE.EQ.'SY' )THEN
+         DO 50 J = 1, N
+            IF( UPPER )THEN
+               IBEG = 1
+               IEND = J
+            ELSE
+               IBEG = J
+               IEND = N
+            END IF
+            DO 30 I = 1, IBEG - 1
+               IF( AA( I, J ).NE.AS( I, J ) )
+     $            GO TO
