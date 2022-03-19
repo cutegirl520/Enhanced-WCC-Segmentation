@@ -3313,4 +3313,180 @@
             END IF
             DO 30 I = 1, IBEG - 1
                IF( AA( I, J ).NE.AS( I, J ) )
-     $            GO TO
+     $            GO TO 70
+   30       CONTINUE
+            DO 40 I = IEND + 1, LDA
+               IF( AA( I, J ).NE.AS( I, J ) )
+     $            GO TO 70
+   40       CONTINUE
+   50    CONTINUE
+      END IF
+*
+      LCERES = .TRUE.
+      GO TO 80
+   70 CONTINUE
+      LCERES = .FALSE.
+   80 RETURN
+*
+*     End of LCERES.
+*
+      END
+      COMPLEX FUNCTION CBEG( RESET )
+*
+*  Generates complex numbers as pairs of random numbers uniformly
+*  distributed between -0.5 and 0.5.
+*
+*  Auxiliary routine for test program for Level 3 Blas.
+*
+*  -- Written on 8-February-1989.
+*     Jack Dongarra, Argonne National Laboratory.
+*     Iain Duff, AERE Harwell.
+*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+*     Sven Hammarling, Numerical Algorithms Group Ltd.
+*
+*     .. Scalar Arguments ..
+      LOGICAL            RESET
+*     .. Local Scalars ..
+      INTEGER            I, IC, J, MI, MJ
+*     .. Save statement ..
+      SAVE               I, IC, J, MI, MJ
+*     .. Intrinsic Functions ..
+      INTRINSIC          CMPLX
+*     .. Executable Statements ..
+      IF( RESET )THEN
+*        Initialize local variables.
+         MI = 891
+         MJ = 457
+         I = 7
+         J = 7
+         IC = 0
+         RESET = .FALSE.
+      END IF
+*
+*     The sequence of values of I or J is bounded between 1 and 999.
+*     If initial I or J = 1,2,3,6,7 or 9, the period will be 50.
+*     If initial I or J = 4 or 8, the period will be 25.
+*     If initial I or J = 5, the period will be 10.
+*     IC is used to break up the period by skipping 1 value of I or J
+*     in 6.
+*
+      IC = IC + 1
+   10 I = I*MI
+      J = J*MJ
+      I = I - 1000*( I/1000 )
+      J = J - 1000*( J/1000 )
+      IF( IC.GE.5 )THEN
+         IC = 0
+         GO TO 10
+      END IF
+      CBEG = CMPLX( ( I - 500 )/1001.0, ( J - 500 )/1001.0 )
+      RETURN
+*
+*     End of CBEG.
+*
+      END
+      REAL FUNCTION SDIFF( X, Y )
+*
+*  Auxiliary routine for test program for Level 3 Blas.
+*
+*  -- Written on 8-February-1989.
+*     Jack Dongarra, Argonne National Laboratory.
+*     Iain Duff, AERE Harwell.
+*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+*     Sven Hammarling, Numerical Algorithms Group Ltd.
+*
+*     .. Scalar Arguments ..
+      REAL               X, Y
+*     .. Executable Statements ..
+      SDIFF = X - Y
+      RETURN
+*
+*     End of SDIFF.
+*
+      END
+      SUBROUTINE CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+*
+*  Tests whether XERBLA has detected an error when it should.
+*
+*  Auxiliary routine for test program for Level 3 Blas.
+*
+*  -- Written on 8-February-1989.
+*     Jack Dongarra, Argonne National Laboratory.
+*     Iain Duff, AERE Harwell.
+*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+*     Sven Hammarling, Numerical Algorithms Group Ltd.
+*
+*     .. Scalar Arguments ..
+      INTEGER            INFOT, NOUT
+      LOGICAL            LERR, OK
+      CHARACTER*6        SRNAMT
+*     .. Executable Statements ..
+      IF( .NOT.LERR )THEN
+         WRITE( NOUT, FMT = 9999 )INFOT, SRNAMT
+         OK = .FALSE.
+      END IF
+      LERR = .FALSE.
+      RETURN
+*
+ 9999 FORMAT( ' ***** ILLEGAL VALUE OF PARAMETER NUMBER ', I2, ' NOT D',
+     $      'ETECTED BY ', A6, ' *****' )
+*
+*     End of CHKXER.
+*
+      END
+      SUBROUTINE XERBLA( SRNAME, INFO )
+*
+*  This is a special version of XERBLA to be used only as part of
+*  the test program for testing error exits from the Level 3 BLAS
+*  routines.
+*
+*  XERBLA  is an error handler for the Level 3 BLAS routines.
+*
+*  It is called by the Level 3 BLAS routines if an input parameter is
+*  invalid.
+*
+*  Auxiliary routine for test program for Level 3 Blas.
+*
+*  -- Written on 8-February-1989.
+*     Jack Dongarra, Argonne National Laboratory.
+*     Iain Duff, AERE Harwell.
+*     Jeremy Du Croz, Numerical Algorithms Group Ltd.
+*     Sven Hammarling, Numerical Algorithms Group Ltd.
+*
+*     .. Scalar Arguments ..
+      INTEGER            INFO
+      CHARACTER*6        SRNAME
+*     .. Scalars in Common ..
+      INTEGER            INFOT, NOUT
+      LOGICAL            LERR, OK
+      CHARACTER*6        SRNAMT
+*     .. Common blocks ..
+      COMMON             /INFOC/INFOT, NOUT, OK, LERR
+      COMMON             /SRNAMC/SRNAMT
+*     .. Executable Statements ..
+      LERR = .TRUE.
+      IF( INFO.NE.INFOT )THEN
+         IF( INFOT.NE.0 )THEN
+            WRITE( NOUT, FMT = 9999 )INFO, INFOT
+         ELSE
+            WRITE( NOUT, FMT = 9997 )INFO
+         END IF
+         OK = .FALSE.
+      END IF
+      IF( SRNAME.NE.SRNAMT )THEN
+         WRITE( NOUT, FMT = 9998 )SRNAME, SRNAMT
+         OK = .FALSE.
+      END IF
+      RETURN
+*
+ 9999 FORMAT( ' ******* XERBLA WAS CALLED WITH INFO = ', I6, ' INSTEAD',
+     $      ' OF ', I2, ' *******' )
+ 9998 FORMAT( ' ******* XERBLA WAS CALLED WITH SRNAME = ', A6, ' INSTE',
+     $      'AD OF ', A6, ' *******' )
+ 9997 FORMAT( ' ******* XERBLA WAS CALLED WITH INFO = ', I6,
+     $      ' *******' )
+*
+*     End of XERBLA
+*
+      END
+
