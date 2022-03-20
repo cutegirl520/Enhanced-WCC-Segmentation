@@ -190,4 +190,249 @@
       DTRUE(3,5) = 4.D5 / (3.D0 * D12)
       DTRUE(6,5) = 1.D0 / D12
       DTRUE(8,5) = 1.D4 / (3.D0 * D12)
-      DTRUE(1,6) = 4.D10 /
+      DTRUE(1,6) = 4.D10 / (1.5D0 * D12 * D12)
+      DTRUE(2,6) = 2.D-2 / 1.5D0
+      DTRUE(8,6) = 5.D-7 * D12
+      DTRUE(1,7) = 4.D0 / 150.D0
+      DTRUE(2,7) = (2.D-10 / 1.5D0) * (D12 * D12)
+      DTRUE(7,7) = -DTRUE(6,5)
+      DTRUE(9,7) = 1.D4 / D12
+      DTRUE(1,8) = DTRUE(1,7)
+      DTRUE(2,8) = 2.D10 / (1.5D0 * D12 * D12)
+      DTRUE(1,9) = 32.D0 / 7.D0
+      DTRUE(2,9) = -16.D0 / 7.D0
+*     .. Executable Statements ..
+*
+*     Compute true values which cannot be prestored
+*     in decimal notation
+*
+      DBTRUE(1) = 1.0D0/0.6D0
+      DBTRUE(3) = -1.0D0/0.6D0
+      DBTRUE(5) = 1.0D0/0.6D0
+*
+      DO 20 K = 1, 8
+*        .. Set N=K for identification in output if any ..
+         N = K
+         IF (ICASE.EQ.3) THEN
+*           .. DROTG ..
+            IF (K.GT.8) GO TO 40
+            SA = DA1(K)
+            SB = DB1(K)
+            CALL DROTG(SA,SB,SC,SS)
+            CALL STEST1(SA,DATRUE(K),DATRUE(K),SFAC)
+            CALL STEST1(SB,DBTRUE(K),DBTRUE(K),SFAC)
+            CALL STEST1(SC,DC1(K),DC1(K),SFAC)
+            CALL STEST1(SS,DS1(K),DS1(K),SFAC)
+         ELSEIF (ICASE.EQ.11) THEN
+*           .. DROTMG ..
+            DO I=1,4
+               DTEMP(I)= DAB(I,K)
+               DTEMP(I+4) = 0.0
+            END DO
+            DTEMP(9) = 0.0
+            CALL DROTMG(DTEMP(1),DTEMP(2),DTEMP(3),DTEMP(4),DTEMP(5))
+            CALL STEST(9,DTEMP,DTRUE(1,K),DTRUE(1,K),SFAC)
+         ELSE
+            WRITE (NOUT,*) ' Shouldn''t be here in CHECK0'
+            STOP
+         END IF
+   20 CONTINUE
+   40 RETURN
+      END
+      SUBROUTINE CHECK1(SFAC)
+*     .. Parameters ..
+      INTEGER           NOUT
+      PARAMETER         (NOUT=6)
+*     .. Scalar Arguments ..
+      DOUBLE PRECISION  SFAC
+*     .. Scalars in Common ..
+      INTEGER           ICASE, INCX, INCY, N
+      LOGICAL           PASS
+*     .. Local Scalars ..
+      INTEGER           I, LEN, NP1
+*     .. Local Arrays ..
+      DOUBLE PRECISION  DTRUE1(5), DTRUE3(5), DTRUE5(8,5,2), DV(8,5,2),
+     +                  SA(10), STEMP(1), STRUE(8), SX(8)
+      INTEGER           ITRUE2(5)
+*     .. External Functions ..
+      DOUBLE PRECISION  DASUM, DNRM2
+      INTEGER           IDAMAX
+      EXTERNAL          DASUM, DNRM2, IDAMAX
+*     .. External Subroutines ..
+      EXTERNAL          ITEST1, DSCAL, STEST, STEST1
+*     .. Intrinsic Functions ..
+      INTRINSIC         MAX
+*     .. Common blocks ..
+      COMMON            /COMBLA/ICASE, N, INCX, INCY, PASS
+*     .. Data statements ..
+      DATA              SA/0.3D0, -1.0D0, 0.0D0, 1.0D0, 0.3D0, 0.3D0,
+     +                  0.3D0, 0.3D0, 0.3D0, 0.3D0/
+      DATA              DV/0.1D0, 2.0D0, 2.0D0, 2.0D0, 2.0D0, 2.0D0,
+     +                  2.0D0, 2.0D0, 0.3D0, 3.0D0, 3.0D0, 3.0D0, 3.0D0,
+     +                  3.0D0, 3.0D0, 3.0D0, 0.3D0, -0.4D0, 4.0D0,
+     +                  4.0D0, 4.0D0, 4.0D0, 4.0D0, 4.0D0, 0.2D0,
+     +                  -0.6D0, 0.3D0, 5.0D0, 5.0D0, 5.0D0, 5.0D0,
+     +                  5.0D0, 0.1D0, -0.3D0, 0.5D0, -0.1D0, 6.0D0,
+     +                  6.0D0, 6.0D0, 6.0D0, 0.1D0, 8.0D0, 8.0D0, 8.0D0,
+     +                  8.0D0, 8.0D0, 8.0D0, 8.0D0, 0.3D0, 9.0D0, 9.0D0,
+     +                  9.0D0, 9.0D0, 9.0D0, 9.0D0, 9.0D0, 0.3D0, 2.0D0,
+     +                  -0.4D0, 2.0D0, 2.0D0, 2.0D0, 2.0D0, 2.0D0,
+     +                  0.2D0, 3.0D0, -0.6D0, 5.0D0, 0.3D0, 2.0D0,
+     +                  2.0D0, 2.0D0, 0.1D0, 4.0D0, -0.3D0, 6.0D0,
+     +                  -0.5D0, 7.0D0, -0.1D0, 3.0D0/
+      DATA              DTRUE1/0.0D0, 0.3D0, 0.5D0, 0.7D0, 0.6D0/
+      DATA              DTRUE3/0.0D0, 0.3D0, 0.7D0, 1.1D0, 1.0D0/
+      DATA              DTRUE5/0.10D0, 2.0D0, 2.0D0, 2.0D0, 2.0D0,
+     +                  2.0D0, 2.0D0, 2.0D0, -0.3D0, 3.0D0, 3.0D0,
+     +                  3.0D0, 3.0D0, 3.0D0, 3.0D0, 3.0D0, 0.0D0, 0.0D0,
+     +                  4.0D0, 4.0D0, 4.0D0, 4.0D0, 4.0D0, 4.0D0,
+     +                  0.20D0, -0.60D0, 0.30D0, 5.0D0, 5.0D0, 5.0D0,
+     +                  5.0D0, 5.0D0, 0.03D0, -0.09D0, 0.15D0, -0.03D0,
+     +                  6.0D0, 6.0D0, 6.0D0, 6.0D0, 0.10D0, 8.0D0,
+     +                  8.0D0, 8.0D0, 8.0D0, 8.0D0, 8.0D0, 8.0D0,
+     +                  0.09D0, 9.0D0, 9.0D0, 9.0D0, 9.0D0, 9.0D0,
+     +                  9.0D0, 9.0D0, 0.09D0, 2.0D0, -0.12D0, 2.0D0,
+     +                  2.0D0, 2.0D0, 2.0D0, 2.0D0, 0.06D0, 3.0D0,
+     +                  -0.18D0, 5.0D0, 0.09D0, 2.0D0, 2.0D0, 2.0D0,
+     +                  0.03D0, 4.0D0, -0.09D0, 6.0D0, -0.15D0, 7.0D0,
+     +                  -0.03D0, 3.0D0/
+      DATA              ITRUE2/0, 1, 2, 2, 3/
+*     .. Executable Statements ..
+      DO 80 INCX = 1, 2
+         DO 60 NP1 = 1, 5
+            N = NP1 - 1
+            LEN = 2*MAX(N,1)
+*           .. Set vector arguments ..
+            DO 20 I = 1, LEN
+               SX(I) = DV(I,NP1,INCX)
+   20       CONTINUE
+*
+            IF (ICASE.EQ.7) THEN
+*              .. DNRM2 ..
+               STEMP(1) = DTRUE1(NP1)
+               CALL STEST1(DNRM2(N,SX,INCX),STEMP(1),STEMP,SFAC)
+            ELSE IF (ICASE.EQ.8) THEN
+*              .. DASUM ..
+               STEMP(1) = DTRUE3(NP1)
+               CALL STEST1(DASUM(N,SX,INCX),STEMP(1),STEMP,SFAC)
+            ELSE IF (ICASE.EQ.9) THEN
+*              .. DSCAL ..
+               CALL DSCAL(N,SA((INCX-1)*5+NP1),SX,INCX)
+               DO 40 I = 1, LEN
+                  STRUE(I) = DTRUE5(I,NP1,INCX)
+   40          CONTINUE
+               CALL STEST(LEN,SX,STRUE,STRUE,SFAC)
+            ELSE IF (ICASE.EQ.10) THEN
+*              .. IDAMAX ..
+               CALL ITEST1(IDAMAX(N,SX,INCX),ITRUE2(NP1))
+            ELSE
+               WRITE (NOUT,*) ' Shouldn''t be here in CHECK1'
+               STOP
+            END IF
+   60    CONTINUE
+   80 CONTINUE
+      RETURN
+      END
+      SUBROUTINE CHECK2(SFAC)
+*     .. Parameters ..
+      INTEGER           NOUT
+      PARAMETER         (NOUT=6)
+*     .. Scalar Arguments ..
+      DOUBLE PRECISION  SFAC
+*     .. Scalars in Common ..
+      INTEGER           ICASE, INCX, INCY, N
+      LOGICAL           PASS
+*     .. Local Scalars ..
+      DOUBLE PRECISION  SA
+      INTEGER           I, J, KI, KN, KNI, KPAR, KSIZE, LENX, LENY,
+     $                  MX, MY 
+*     .. Local Arrays ..
+      DOUBLE PRECISION  DT10X(7,4,4), DT10Y(7,4,4), DT7(4,4),
+     $                  DT8(7,4,4), DX1(7),
+     $                  DY1(7), SSIZE1(4), SSIZE2(14,2), SSIZE(7),
+     $                  STX(7), STY(7), SX(7), SY(7),
+     $                  DPAR(5,4), DT19X(7,4,16),DT19XA(7,4,4),
+     $                  DT19XB(7,4,4), DT19XC(7,4,4),DT19XD(7,4,4),
+     $                  DT19Y(7,4,16), DT19YA(7,4,4),DT19YB(7,4,4),
+     $                  DT19YC(7,4,4), DT19YD(7,4,4), DTEMP(5)
+      INTEGER           INCXS(4), INCYS(4), LENS(4,2), NS(4)
+*     .. External Functions ..
+      DOUBLE PRECISION  DDOT, DSDOT
+      EXTERNAL          DDOT, DSDOT
+*     .. External Subroutines ..
+      EXTERNAL          DAXPY, DCOPY, DROTM, DSWAP, STEST, STEST1
+*     .. Intrinsic Functions ..
+      INTRINSIC         ABS, MIN
+*     .. Common blocks ..
+      COMMON            /COMBLA/ICASE, N, INCX, INCY, PASS
+*     .. Data statements ..
+      EQUIVALENCE (DT19X(1,1,1),DT19XA(1,1,1)),(DT19X(1,1,5),
+     A   DT19XB(1,1,1)),(DT19X(1,1,9),DT19XC(1,1,1)),
+     B   (DT19X(1,1,13),DT19XD(1,1,1))
+      EQUIVALENCE (DT19Y(1,1,1),DT19YA(1,1,1)),(DT19Y(1,1,5),
+     A   DT19YB(1,1,1)),(DT19Y(1,1,9),DT19YC(1,1,1)),
+     B   (DT19Y(1,1,13),DT19YD(1,1,1))
+
+      DATA              SA/0.3D0/
+      DATA              INCXS/1, 2, -2, -1/
+      DATA              INCYS/1, -2, 1, -2/
+      DATA              LENS/1, 1, 2, 4, 1, 1, 3, 7/
+      DATA              NS/0, 1, 2, 4/
+      DATA              DX1/0.6D0, 0.1D0, -0.5D0, 0.8D0, 0.9D0, -0.3D0,
+     +                  -0.4D0/
+      DATA              DY1/0.5D0, -0.9D0, 0.3D0, 0.7D0, -0.6D0, 0.2D0,
+     +                  0.8D0/
+      DATA              DT7/0.0D0, 0.30D0, 0.21D0, 0.62D0, 0.0D0,
+     +                  0.30D0, -0.07D0, 0.85D0, 0.0D0, 0.30D0, -0.79D0,
+     +                  -0.74D0, 0.0D0, 0.30D0, 0.33D0, 1.27D0/
+      DATA              DT8/0.5D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.68D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.68D0, -0.87D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.68D0, -0.87D0, 0.15D0,
+     +                  0.94D0, 0.0D0, 0.0D0, 0.0D0, 0.5D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.68D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.35D0, -0.9D0, 0.48D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.38D0, -0.9D0, 0.57D0, 0.7D0, -0.75D0,
+     +                  0.2D0, 0.98D0, 0.5D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.68D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.35D0, -0.72D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.38D0,
+     +                  -0.63D0, 0.15D0, 0.88D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.5D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.68D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.68D0, -0.9D0, 0.33D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.68D0, -0.9D0, 0.33D0, 0.7D0,
+     +                  -0.75D0, 0.2D0, 1.04D0/
+      DATA              DT10X/0.6D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.5D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.5D0, -0.9D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.5D0, -0.9D0, 0.3D0, 0.7D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.6D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.5D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.3D0, 0.1D0, 0.5D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.8D0, 0.1D0, -0.6D0,
+     +                  0.8D0, 0.3D0, -0.3D0, 0.5D0, 0.6D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.5D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, -0.9D0,
+     +                  0.1D0, 0.5D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.7D0,
+     +                  0.1D0, 0.3D0, 0.8D0, -0.9D0, -0.3D0, 0.5D0,
+     +                  0.6D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.5D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.5D0, 0.3D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.5D0, 0.3D0, -0.6D0, 0.8D0, 0.0D0, 0.0D0,
+     +                  0.0D0/
+      DATA              DT10Y/0.5D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.6D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.6D0, 0.1D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.6D0, 0.1D0, -0.5D0, 0.8D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.5D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.6D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.0D0, -0.5D0, -0.9D0, 0.6D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.0D0, -0.4D0, -0.9D0, 0.9D0,
+     +                  0.7D0, -0.5D0, 0.2D0, 0.6D0, 0.5D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.6D0, 0.0D0,
+     +                  0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, -0.5D0,
+     +                  0.6D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0,
+     +                  -0.4D0, 0.9D0, -0.5D0, 0.6D0, 0.0D0, 0.0D0,
+     +                  0.0D0, 0.5D0, 0.0D0, 0.0D0, 0.
