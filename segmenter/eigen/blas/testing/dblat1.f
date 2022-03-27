@@ -959,4 +959,107 @@
       LOGICAL          PASS
 *     .. Local Scalars ..
       REAL             SD
-*     
+*     .. Intrinsic Functions ..
+      INTRINSIC        ABS
+*     .. Common blocks ..
+      COMMON           /COMBLA/ICASE, N, INCX, INCY, PASS
+*     .. Executable Statements ..
+*
+         SD = SCOMP - STRUE
+         IF (ABS(SFAC*SD) .LE. ABS(SSIZE) * EPSILON(ZERO))
+     +       GO TO 40
+*
+*                             HERE    SCOMP(I) IS NOT CLOSE TO STRUE(I).
+*
+         IF ( .NOT. PASS) GO TO 20
+*                             PRINT FAIL MESSAGE AND HEADER.
+         PASS = .FALSE.
+         WRITE (NOUT,99999)
+         WRITE (NOUT,99998)
+   20    WRITE (NOUT,99997) ICASE, N, INCX, INCY, SCOMP,
+     +     STRUE, SD, SSIZE
+   40 CONTINUE
+      RETURN
+*
+99999 FORMAT ('                                       FAIL')
+99998 FORMAT (/' CASE  N INCX INCY                           ',
+     +       ' COMP(I)                             TRUE(I)  DIFFERENCE',
+     +       '     SIZE(I)',/1X)
+99997 FORMAT (1X,I4,I3,1I5,I3,2E36.8,2E12.4)
+      END
+      SUBROUTINE STEST1(SCOMP1,STRUE1,SSIZE,SFAC)
+*     ************************* STEST1 *****************************
+*
+*     THIS IS AN INTERFACE SUBROUTINE TO ACCOMODATE THE FORTRAN
+*     REQUIREMENT THAT WHEN A DUMMY ARGUMENT IS AN ARRAY, THE
+*     ACTUAL ARGUMENT MUST ALSO BE AN ARRAY OR AN ARRAY ELEMENT.
+*
+*     C.L. LAWSON, JPL, 1978 DEC 6
+*
+*     .. Scalar Arguments ..
+      DOUBLE PRECISION  SCOMP1, SFAC, STRUE1
+*     .. Array Arguments ..
+      DOUBLE PRECISION  SSIZE(*)
+*     .. Local Arrays ..
+      DOUBLE PRECISION  SCOMP(1), STRUE(1)
+*     .. External Subroutines ..
+      EXTERNAL          STEST
+*     .. Executable Statements ..
+*
+      SCOMP(1) = SCOMP1
+      STRUE(1) = STRUE1
+      CALL STEST(1,SCOMP,STRUE,SSIZE,SFAC)
+*
+      RETURN
+      END
+      DOUBLE PRECISION FUNCTION SDIFF(SA,SB)
+*     ********************************* SDIFF **************************
+*     COMPUTES DIFFERENCE OF TWO NUMBERS.  C. L. LAWSON, JPL 1974 FEB 15
+*
+*     .. Scalar Arguments ..
+      DOUBLE PRECISION                SA, SB
+*     .. Executable Statements ..
+      SDIFF = SA - SB
+      RETURN
+      END
+      SUBROUTINE ITEST1(ICOMP,ITRUE)
+*     ********************************* ITEST1 *************************
+*
+*     THIS SUBROUTINE COMPARES THE VARIABLES ICOMP AND ITRUE FOR
+*     EQUALITY.
+*     C. L. LAWSON, JPL, 1974 DEC 10
+*
+*     .. Parameters ..
+      INTEGER           NOUT
+      PARAMETER         (NOUT=6)
+*     .. Scalar Arguments ..
+      INTEGER           ICOMP, ITRUE
+*     .. Scalars in Common ..
+      INTEGER           ICASE, INCX, INCY, N
+      LOGICAL           PASS
+*     .. Local Scalars ..
+      INTEGER           ID
+*     .. Common blocks ..
+      COMMON            /COMBLA/ICASE, N, INCX, INCY, PASS
+*     .. Executable Statements ..
+*
+      IF (ICOMP.EQ.ITRUE) GO TO 40
+*
+*                            HERE ICOMP IS NOT EQUAL TO ITRUE.
+*
+      IF ( .NOT. PASS) GO TO 20
+*                             PRINT FAIL MESSAGE AND HEADER.
+      PASS = .FALSE.
+      WRITE (NOUT,99999)
+      WRITE (NOUT,99998)
+   20 ID = ICOMP - ITRUE
+      WRITE (NOUT,99997) ICASE, N, INCX, INCY, ICOMP, ITRUE, ID
+   40 CONTINUE
+      RETURN
+*
+99999 FORMAT ('                                       FAIL')
+99998 FORMAT (/' CASE  N INCX INCY                               ',
+     +       ' COMP                                TRUE     DIFFERENCE',
+     +       /1X)
+99997 FORMAT (1X,I4,I3,2I5,2I36,I12)
+      END
