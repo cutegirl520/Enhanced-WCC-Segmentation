@@ -1518,4 +1518,351 @@
 *     .. Common blocks ..
       COMMON             /INFOC/INFOT, NOUTC, OK, LERR
 *     .. Executable Statements ..
-*     Define the number of a
+*     Define the number of arguments.
+      NARGS = 9
+*
+      NC = 0
+      RESET = .TRUE.
+      ERRMAX = ZERO
+*
+      DO 120 IN = 1, NIDIM
+         N = IDIM( IN )
+         ND = N/2 + 1
+*
+         DO 110 IM = 1, 2
+            IF( IM.EQ.1 )
+     $         M = MAX( N - ND, 0 )
+            IF( IM.EQ.2 )
+     $         M = MIN( N + ND, NMAX )
+*
+*           Set LDA to 1 more than minimum value if room.
+            LDA = M
+            IF( LDA.LT.NMAX )
+     $         LDA = LDA + 1
+*           Skip tests if not enough room.
+            IF( LDA.GT.NMAX )
+     $         GO TO 110
+            LAA = LDA*N
+            NULL = N.LE.0.OR.M.LE.0
+*
+            DO 100 IX = 1, NINC
+               INCX = INC( IX )
+               LX = ABS( INCX )*M
+*
+*              Generate the vector X.
+*
+               TRANSL = HALF
+               CALL SMAKE( 'GE', ' ', ' ', 1, M, X, 1, XX, ABS( INCX ),
+     $                     0, M - 1, RESET, TRANSL )
+               IF( M.GT.1 )THEN
+                  X( M/2 ) = ZERO
+                  XX( 1 + ABS( INCX )*( M/2 - 1 ) ) = ZERO
+               END IF
+*
+               DO 90 IY = 1, NINC
+                  INCY = INC( IY )
+                  LY = ABS( INCY )*N
+*
+*                 Generate the vector Y.
+*
+                  TRANSL = ZERO
+                  CALL SMAKE( 'GE', ' ', ' ', 1, N, Y, 1, YY,
+     $                        ABS( INCY ), 0, N - 1, RESET, TRANSL )
+                  IF( N.GT.1 )THEN
+                     Y( N/2 ) = ZERO
+                     YY( 1 + ABS( INCY )*( N/2 - 1 ) ) = ZERO
+                  END IF
+*
+                  DO 80 IA = 1, NALF
+                     ALPHA = ALF( IA )
+*
+*                    Generate the matrix A.
+*
+                     TRANSL = ZERO
+                     CALL SMAKE( SNAME( 2: 3 ), ' ', ' ', M, N, A, NMAX,
+     $                           AA, LDA, M - 1, N - 1, RESET, TRANSL )
+*
+                     NC = NC + 1
+*
+*                    Save every datum before calling the subroutine.
+*
+                     MS = M
+                     NS = N
+                     ALS = ALPHA
+                     DO 10 I = 1, LAA
+                        AS( I ) = AA( I )
+   10                CONTINUE
+                     LDAS = LDA
+                     DO 20 I = 1, LX
+                        XS( I ) = XX( I )
+   20                CONTINUE
+                     INCXS = INCX
+                     DO 30 I = 1, LY
+                        YS( I ) = YY( I )
+   30                CONTINUE
+                     INCYS = INCY
+*
+*                    Call the subroutine.
+*
+                     IF( TRACE )
+     $                  WRITE( NTRA, FMT = 9994 )NC, SNAME, M, N,
+     $                  ALPHA, INCX, INCY, LDA
+                     IF( REWI )
+     $                  REWIND NTRA
+                     CALL SGER( M, N, ALPHA, XX, INCX, YY, INCY, AA,
+     $                          LDA )
+*
+*                    Check if error-exit was taken incorrectly.
+*
+                     IF( .NOT.OK )THEN
+                        WRITE( NOUT, FMT = 9993 )
+                        FATAL = .TRUE.
+                        GO TO 140
+                     END IF
+*
+*                    See what data changed inside subroutine.
+*
+                     ISAME( 1 ) = MS.EQ.M
+                     ISAME( 2 ) = NS.EQ.N
+                     ISAME( 3 ) = ALS.EQ.ALPHA
+                     ISAME( 4 ) = LSE( XS, XX, LX )
+                     ISAME( 5 ) = INCXS.EQ.INCX
+                     ISAME( 6 ) = LSE( YS, YY, LY )
+                     ISAME( 7 ) = INCYS.EQ.INCY
+                     IF( NULL )THEN
+                        ISAME( 8 ) = LSE( AS, AA, LAA )
+                     ELSE
+                        ISAME( 8 ) = LSERES( 'GE', ' ', M, N, AS, AA,
+     $                               LDA )
+                     END IF
+                     ISAME( 9 ) = LDAS.EQ.LDA
+*
+*                    If data was incorrectly changed, report and return.
+*
+                     SAME = .TRUE.
+                     DO 40 I = 1, NARGS
+                        SAME = SAME.AND.ISAME( I )
+                        IF( .NOT.ISAME( I ) )
+     $                     WRITE( NOUT, FMT = 9998 )I
+   40                CONTINUE
+                     IF( .NOT.SAME )THEN
+                        FATAL = .TRUE.
+                        GO TO 140
+                     END IF
+*
+                     IF( .NOT.NULL )THEN
+*
+*                       Check the result column by column.
+*
+                        IF( INCX.GT.0 )THEN
+                           DO 50 I = 1, M
+                              Z( I ) = X( I )
+   50                      CONTINUE
+                        ELSE
+                           DO 60 I = 1, M
+                              Z( I ) = X( M - I + 1 )
+   60                      CONTINUE
+                        END IF
+                        DO 70 J = 1, N
+                           IF( INCY.GT.0 )THEN
+                              W( 1 ) = Y( J )
+                           ELSE
+                              W( 1 ) = Y( N - J + 1 )
+                           END IF
+                           CALL SMVCH( 'N', M, 1, ALPHA, Z, NMAX, W, 1,
+     $                                 ONE, A( 1, J ), 1, YT, G,
+     $                                 AA( 1 + ( J - 1 )*LDA ), EPS,
+     $                                 ERR, FATAL, NOUT, .TRUE. )
+                           ERRMAX = MAX( ERRMAX, ERR )
+*                          If got really bad answer, report and return.
+                           IF( FATAL )
+     $                        GO TO 130
+   70                   CONTINUE
+                     ELSE
+*                       Avoid repeating tests with M.le.0 or N.le.0.
+                        GO TO 110
+                     END IF
+*
+   80             CONTINUE
+*
+   90          CONTINUE
+*
+  100       CONTINUE
+*
+  110    CONTINUE
+*
+  120 CONTINUE
+*
+*     Report result.
+*
+      IF( ERRMAX.LT.THRESH )THEN
+         WRITE( NOUT, FMT = 9999 )SNAME, NC
+      ELSE
+         WRITE( NOUT, FMT = 9997 )SNAME, NC, ERRMAX
+      END IF
+      GO TO 150
+*
+  130 CONTINUE
+      WRITE( NOUT, FMT = 9995 )J
+*
+  140 CONTINUE
+      WRITE( NOUT, FMT = 9996 )SNAME
+      WRITE( NOUT, FMT = 9994 )NC, SNAME, M, N, ALPHA, INCX, INCY, LDA
+*
+  150 CONTINUE
+      RETURN
+*
+ 9999 FORMAT( ' ', A6, ' PASSED THE COMPUTATIONAL TESTS (', I6, ' CALL',
+     $      'S)' )
+ 9998 FORMAT( ' ******* FATAL ERROR - PARAMETER NUMBER ', I2, ' WAS CH',
+     $      'ANGED INCORRECTLY *******' )
+ 9997 FORMAT( ' ', A6, ' COMPLETED THE COMPUTATIONAL TESTS (', I6, ' C',
+     $      'ALLS)', /' ******* BUT WITH MAXIMUM TEST RATIO', F8.2,
+     $      ' - SUSPECT *******' )
+ 9996 FORMAT( ' ******* ', A6, ' FAILED ON CALL NUMBER:' )
+ 9995 FORMAT( '      THESE ARE THE RESULTS FOR COLUMN ', I3 )
+ 9994 FORMAT( 1X, I6, ': ', A6, '(', 2( I3, ',' ), F4.1, ', X,', I2,
+     $      ', Y,', I2, ', A,', I3, ')                  .' )
+ 9993 FORMAT( ' ******* FATAL ERROR - ERROR-EXIT TAKEN ON VALID CALL *',
+     $      '******' )
+*
+*     End of SCHK4.
+*
+      END
+      SUBROUTINE SCHK5( SNAME, EPS, THRESH, NOUT, NTRA, TRACE, REWI,
+     $                  FATAL, NIDIM, IDIM, NALF, ALF, NINC, INC, NMAX,
+     $                  INCMAX, A, AA, AS, X, XX, XS, Y, YY, YS, YT, G,
+     $                  Z )
+*
+*  Tests SSYR and SSPR.
+*
+*  Auxiliary routine for test program for Level 2 Blas.
+*
+*  -- Written on 10-August-1987.
+*     Richard Hanson, Sandia National Labs.
+*     Jeremy Du Croz, NAG Central Office.
+*
+*     .. Parameters ..
+      REAL               ZERO, HALF, ONE
+      PARAMETER          ( ZERO = 0.0, HALF = 0.5, ONE = 1.0 )
+*     .. Scalar Arguments ..
+      REAL               EPS, THRESH
+      INTEGER            INCMAX, NALF, NIDIM, NINC, NMAX, NOUT, NTRA
+      LOGICAL            FATAL, REWI, TRACE
+      CHARACTER*6        SNAME
+*     .. Array Arguments ..
+      REAL               A( NMAX, NMAX ), AA( NMAX*NMAX ), ALF( NALF ),
+     $                   AS( NMAX*NMAX ), G( NMAX ), X( NMAX ),
+     $                   XS( NMAX*INCMAX ), XX( NMAX*INCMAX ),
+     $                   Y( NMAX ), YS( NMAX*INCMAX ), YT( NMAX ),
+     $                   YY( NMAX*INCMAX ), Z( NMAX )
+      INTEGER            IDIM( NIDIM ), INC( NINC )
+*     .. Local Scalars ..
+      REAL               ALPHA, ALS, ERR, ERRMAX, TRANSL
+      INTEGER            I, IA, IC, IN, INCX, INCXS, IX, J, JA, JJ, LAA,
+     $                   LDA, LDAS, LJ, LX, N, NARGS, NC, NS
+      LOGICAL            FULL, NULL, PACKED, RESET, SAME, UPPER
+      CHARACTER*1        UPLO, UPLOS
+      CHARACTER*2        ICH
+*     .. Local Arrays ..
+      REAL               W( 1 )
+      LOGICAL            ISAME( 13 )
+*     .. External Functions ..
+      LOGICAL            LSE, LSERES
+      EXTERNAL           LSE, LSERES
+*     .. External Subroutines ..
+      EXTERNAL           SMAKE, SMVCH, SSPR, SSYR
+*     .. Intrinsic Functions ..
+      INTRINSIC          ABS, MAX
+*     .. Scalars in Common ..
+      INTEGER            INFOT, NOUTC
+      LOGICAL            LERR, OK
+*     .. Common blocks ..
+      COMMON             /INFOC/INFOT, NOUTC, OK, LERR
+*     .. Data statements ..
+      DATA               ICH/'UL'/
+*     .. Executable Statements ..
+      FULL = SNAME( 3: 3 ).EQ.'Y'
+      PACKED = SNAME( 3: 3 ).EQ.'P'
+*     Define the number of arguments.
+      IF( FULL )THEN
+         NARGS = 7
+      ELSE IF( PACKED )THEN
+         NARGS = 6
+      END IF
+*
+      NC = 0
+      RESET = .TRUE.
+      ERRMAX = ZERO
+*
+      DO 100 IN = 1, NIDIM
+         N = IDIM( IN )
+*        Set LDA to 1 more than minimum value if room.
+         LDA = N
+         IF( LDA.LT.NMAX )
+     $      LDA = LDA + 1
+*        Skip tests if not enough room.
+         IF( LDA.GT.NMAX )
+     $      GO TO 100
+         IF( PACKED )THEN
+            LAA = ( N*( N + 1 ) )/2
+         ELSE
+            LAA = LDA*N
+         END IF
+*
+         DO 90 IC = 1, 2
+            UPLO = ICH( IC: IC )
+            UPPER = UPLO.EQ.'U'
+*
+            DO 80 IX = 1, NINC
+               INCX = INC( IX )
+               LX = ABS( INCX )*N
+*
+*              Generate the vector X.
+*
+               TRANSL = HALF
+               CALL SMAKE( 'GE', ' ', ' ', 1, N, X, 1, XX, ABS( INCX ),
+     $                     0, N - 1, RESET, TRANSL )
+               IF( N.GT.1 )THEN
+                  X( N/2 ) = ZERO
+                  XX( 1 + ABS( INCX )*( N/2 - 1 ) ) = ZERO
+               END IF
+*
+               DO 70 IA = 1, NALF
+                  ALPHA = ALF( IA )
+                  NULL = N.LE.0.OR.ALPHA.EQ.ZERO
+*
+*                 Generate the matrix A.
+*
+                  TRANSL = ZERO
+                  CALL SMAKE( SNAME( 2: 3 ), UPLO, ' ', N, N, A, NMAX,
+     $                        AA, LDA, N - 1, N - 1, RESET, TRANSL )
+*
+                  NC = NC + 1
+*
+*                 Save every datum before calling the subroutine.
+*
+                  UPLOS = UPLO
+                  NS = N
+                  ALS = ALPHA
+                  DO 10 I = 1, LAA
+                     AS( I ) = AA( I )
+   10             CONTINUE
+                  LDAS = LDA
+                  DO 20 I = 1, LX
+                     XS( I ) = XX( I )
+   20             CONTINUE
+                  INCXS = INCX
+*
+*                 Call the subroutine.
+*
+                  IF( FULL )THEN
+                     IF( TRACE )
+     $                  WRITE( NTRA, FMT = 9993 )NC, SNAME, UPLO, N,
+     $                  ALPHA, INCX, LDA
+                     IF( REWI )
+     $                  REWIND NTRA
+                     CALL SSYR( UPLO, N, ALPHA, XX, INCX, AA, LDA )
+                  ELSE IF( PACKED )THEN
+                     IF( TRACE )
+     $                  WRITE( NTRA, FMT = 9994 )NC, SNAME,
