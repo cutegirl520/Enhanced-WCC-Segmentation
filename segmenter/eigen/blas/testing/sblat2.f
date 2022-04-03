@@ -1865,4 +1865,331 @@
                      CALL SSYR( UPLO, N, ALPHA, XX, INCX, AA, LDA )
                   ELSE IF( PACKED )THEN
                      IF( TRACE )
-     $                  WRITE( NTRA, FMT = 9994 )NC, SNAME,
+     $                  WRITE( NTRA, FMT = 9994 )NC, SNAME, UPLO, N,
+     $                  ALPHA, INCX
+                     IF( REWI )
+     $                  REWIND NTRA
+                     CALL SSPR( UPLO, N, ALPHA, XX, INCX, AA )
+                  END IF
+*
+*                 Check if error-exit was taken incorrectly.
+*
+                  IF( .NOT.OK )THEN
+                     WRITE( NOUT, FMT = 9992 )
+                     FATAL = .TRUE.
+                     GO TO 120
+                  END IF
+*
+*                 See what data changed inside subroutines.
+*
+                  ISAME( 1 ) = UPLO.EQ.UPLOS
+                  ISAME( 2 ) = NS.EQ.N
+                  ISAME( 3 ) = ALS.EQ.ALPHA
+                  ISAME( 4 ) = LSE( XS, XX, LX )
+                  ISAME( 5 ) = INCXS.EQ.INCX
+                  IF( NULL )THEN
+                     ISAME( 6 ) = LSE( AS, AA, LAA )
+                  ELSE
+                     ISAME( 6 ) = LSERES( SNAME( 2: 3 ), UPLO, N, N, AS,
+     $                            AA, LDA )
+                  END IF
+                  IF( .NOT.PACKED )THEN
+                     ISAME( 7 ) = LDAS.EQ.LDA
+                  END IF
+*
+*                 If data was incorrectly changed, report and return.
+*
+                  SAME = .TRUE.
+                  DO 30 I = 1, NARGS
+                     SAME = SAME.AND.ISAME( I )
+                     IF( .NOT.ISAME( I ) )
+     $                  WRITE( NOUT, FMT = 9998 )I
+   30             CONTINUE
+                  IF( .NOT.SAME )THEN
+                     FATAL = .TRUE.
+                     GO TO 120
+                  END IF
+*
+                  IF( .NOT.NULL )THEN
+*
+*                    Check the result column by column.
+*
+                     IF( INCX.GT.0 )THEN
+                        DO 40 I = 1, N
+                           Z( I ) = X( I )
+   40                   CONTINUE
+                     ELSE
+                        DO 50 I = 1, N
+                           Z( I ) = X( N - I + 1 )
+   50                   CONTINUE
+                     END IF
+                     JA = 1
+                     DO 60 J = 1, N
+                        W( 1 ) = Z( J )
+                        IF( UPPER )THEN
+                           JJ = 1
+                           LJ = J
+                        ELSE
+                           JJ = J
+                           LJ = N - J + 1
+                        END IF
+                        CALL SMVCH( 'N', LJ, 1, ALPHA, Z( JJ ), LJ, W,
+     $                              1, ONE, A( JJ, J ), 1, YT, G,
+     $                              AA( JA ), EPS, ERR, FATAL, NOUT,
+     $                              .TRUE. )
+                        IF( FULL )THEN
+                           IF( UPPER )THEN
+                              JA = JA + LDA
+                           ELSE
+                              JA = JA + LDA + 1
+                           END IF
+                        ELSE
+                           JA = JA + LJ
+                        END IF
+                        ERRMAX = MAX( ERRMAX, ERR )
+*                       If got really bad answer, report and return.
+                        IF( FATAL )
+     $                     GO TO 110
+   60                CONTINUE
+                  ELSE
+*                    Avoid repeating tests if N.le.0.
+                     IF( N.LE.0 )
+     $                  GO TO 100
+                  END IF
+*
+   70          CONTINUE
+*
+   80       CONTINUE
+*
+   90    CONTINUE
+*
+  100 CONTINUE
+*
+*     Report result.
+*
+      IF( ERRMAX.LT.THRESH )THEN
+         WRITE( NOUT, FMT = 9999 )SNAME, NC
+      ELSE
+         WRITE( NOUT, FMT = 9997 )SNAME, NC, ERRMAX
+      END IF
+      GO TO 130
+*
+  110 CONTINUE
+      WRITE( NOUT, FMT = 9995 )J
+*
+  120 CONTINUE
+      WRITE( NOUT, FMT = 9996 )SNAME
+      IF( FULL )THEN
+         WRITE( NOUT, FMT = 9993 )NC, SNAME, UPLO, N, ALPHA, INCX, LDA
+      ELSE IF( PACKED )THEN
+         WRITE( NOUT, FMT = 9994 )NC, SNAME, UPLO, N, ALPHA, INCX
+      END IF
+*
+  130 CONTINUE
+      RETURN
+*
+ 9999 FORMAT( ' ', A6, ' PASSED THE COMPUTATIONAL TESTS (', I6, ' CALL',
+     $      'S)' )
+ 9998 FORMAT( ' ******* FATAL ERROR - PARAMETER NUMBER ', I2, ' WAS CH',
+     $      'ANGED INCORRECTLY *******' )
+ 9997 FORMAT( ' ', A6, ' COMPLETED THE COMPUTATIONAL TESTS (', I6, ' C',
+     $      'ALLS)', /' ******* BUT WITH MAXIMUM TEST RATIO', F8.2,
+     $      ' - SUSPECT *******' )
+ 9996 FORMAT( ' ******* ', A6, ' FAILED ON CALL NUMBER:' )
+ 9995 FORMAT( '      THESE ARE THE RESULTS FOR COLUMN ', I3 )
+ 9994 FORMAT( 1X, I6, ': ', A6, '(''', A1, ''',', I3, ',', F4.1, ', X,',
+     $      I2, ', AP)                           .' )
+ 9993 FORMAT( 1X, I6, ': ', A6, '(''', A1, ''',', I3, ',', F4.1, ', X,',
+     $      I2, ', A,', I3, ')                        .' )
+ 9992 FORMAT( ' ******* FATAL ERROR - ERROR-EXIT TAKEN ON VALID CALL *',
+     $      '******' )
+*
+*     End of SCHK5.
+*
+      END
+      SUBROUTINE SCHK6( SNAME, EPS, THRESH, NOUT, NTRA, TRACE, REWI,
+     $                  FATAL, NIDIM, IDIM, NALF, ALF, NINC, INC, NMAX,
+     $                  INCMAX, A, AA, AS, X, XX, XS, Y, YY, YS, YT, G,
+     $                  Z )
+*
+*  Tests SSYR2 and SSPR2.
+*
+*  Auxiliary routine for test program for Level 2 Blas.
+*
+*  -- Written on 10-August-1987.
+*     Richard Hanson, Sandia National Labs.
+*     Jeremy Du Croz, NAG Central Office.
+*
+*     .. Parameters ..
+      REAL               ZERO, HALF, ONE
+      PARAMETER          ( ZERO = 0.0, HALF = 0.5, ONE = 1.0 )
+*     .. Scalar Arguments ..
+      REAL               EPS, THRESH
+      INTEGER            INCMAX, NALF, NIDIM, NINC, NMAX, NOUT, NTRA
+      LOGICAL            FATAL, REWI, TRACE
+      CHARACTER*6        SNAME
+*     .. Array Arguments ..
+      REAL               A( NMAX, NMAX ), AA( NMAX*NMAX ), ALF( NALF ),
+     $                   AS( NMAX*NMAX ), G( NMAX ), X( NMAX ),
+     $                   XS( NMAX*INCMAX ), XX( NMAX*INCMAX ),
+     $                   Y( NMAX ), YS( NMAX*INCMAX ), YT( NMAX ),
+     $                   YY( NMAX*INCMAX ), Z( NMAX, 2 )
+      INTEGER            IDIM( NIDIM ), INC( NINC )
+*     .. Local Scalars ..
+      REAL               ALPHA, ALS, ERR, ERRMAX, TRANSL
+      INTEGER            I, IA, IC, IN, INCX, INCXS, INCY, INCYS, IX,
+     $                   IY, J, JA, JJ, LAA, LDA, LDAS, LJ, LX, LY, N,
+     $                   NARGS, NC, NS
+      LOGICAL            FULL, NULL, PACKED, RESET, SAME, UPPER
+      CHARACTER*1        UPLO, UPLOS
+      CHARACTER*2        ICH
+*     .. Local Arrays ..
+      REAL               W( 2 )
+      LOGICAL            ISAME( 13 )
+*     .. External Functions ..
+      LOGICAL            LSE, LSERES
+      EXTERNAL           LSE, LSERES
+*     .. External Subroutines ..
+      EXTERNAL           SMAKE, SMVCH, SSPR2, SSYR2
+*     .. Intrinsic Functions ..
+      INTRINSIC          ABS, MAX
+*     .. Scalars in Common ..
+      INTEGER            INFOT, NOUTC
+      LOGICAL            LERR, OK
+*     .. Common blocks ..
+      COMMON             /INFOC/INFOT, NOUTC, OK, LERR
+*     .. Data statements ..
+      DATA               ICH/'UL'/
+*     .. Executable Statements ..
+      FULL = SNAME( 3: 3 ).EQ.'Y'
+      PACKED = SNAME( 3: 3 ).EQ.'P'
+*     Define the number of arguments.
+      IF( FULL )THEN
+         NARGS = 9
+      ELSE IF( PACKED )THEN
+         NARGS = 8
+      END IF
+*
+      NC = 0
+      RESET = .TRUE.
+      ERRMAX = ZERO
+*
+      DO 140 IN = 1, NIDIM
+         N = IDIM( IN )
+*        Set LDA to 1 more than minimum value if room.
+         LDA = N
+         IF( LDA.LT.NMAX )
+     $      LDA = LDA + 1
+*        Skip tests if not enough room.
+         IF( LDA.GT.NMAX )
+     $      GO TO 140
+         IF( PACKED )THEN
+            LAA = ( N*( N + 1 ) )/2
+         ELSE
+            LAA = LDA*N
+         END IF
+*
+         DO 130 IC = 1, 2
+            UPLO = ICH( IC: IC )
+            UPPER = UPLO.EQ.'U'
+*
+            DO 120 IX = 1, NINC
+               INCX = INC( IX )
+               LX = ABS( INCX )*N
+*
+*              Generate the vector X.
+*
+               TRANSL = HALF
+               CALL SMAKE( 'GE', ' ', ' ', 1, N, X, 1, XX, ABS( INCX ),
+     $                     0, N - 1, RESET, TRANSL )
+               IF( N.GT.1 )THEN
+                  X( N/2 ) = ZERO
+                  XX( 1 + ABS( INCX )*( N/2 - 1 ) ) = ZERO
+               END IF
+*
+               DO 110 IY = 1, NINC
+                  INCY = INC( IY )
+                  LY = ABS( INCY )*N
+*
+*                 Generate the vector Y.
+*
+                  TRANSL = ZERO
+                  CALL SMAKE( 'GE', ' ', ' ', 1, N, Y, 1, YY,
+     $                        ABS( INCY ), 0, N - 1, RESET, TRANSL )
+                  IF( N.GT.1 )THEN
+                     Y( N/2 ) = ZERO
+                     YY( 1 + ABS( INCY )*( N/2 - 1 ) ) = ZERO
+                  END IF
+*
+                  DO 100 IA = 1, NALF
+                     ALPHA = ALF( IA )
+                     NULL = N.LE.0.OR.ALPHA.EQ.ZERO
+*
+*                    Generate the matrix A.
+*
+                     TRANSL = ZERO
+                     CALL SMAKE( SNAME( 2: 3 ), UPLO, ' ', N, N, A,
+     $                           NMAX, AA, LDA, N - 1, N - 1, RESET,
+     $                           TRANSL )
+*
+                     NC = NC + 1
+*
+*                    Save every datum before calling the subroutine.
+*
+                     UPLOS = UPLO
+                     NS = N
+                     ALS = ALPHA
+                     DO 10 I = 1, LAA
+                        AS( I ) = AA( I )
+   10                CONTINUE
+                     LDAS = LDA
+                     DO 20 I = 1, LX
+                        XS( I ) = XX( I )
+   20                CONTINUE
+                     INCXS = INCX
+                     DO 30 I = 1, LY
+                        YS( I ) = YY( I )
+   30                CONTINUE
+                     INCYS = INCY
+*
+*                    Call the subroutine.
+*
+                     IF( FULL )THEN
+                        IF( TRACE )
+     $                     WRITE( NTRA, FMT = 9993 )NC, SNAME, UPLO, N,
+     $                     ALPHA, INCX, INCY, LDA
+                        IF( REWI )
+     $                     REWIND NTRA
+                        CALL SSYR2( UPLO, N, ALPHA, XX, INCX, YY, INCY,
+     $                              AA, LDA )
+                     ELSE IF( PACKED )THEN
+                        IF( TRACE )
+     $                     WRITE( NTRA, FMT = 9994 )NC, SNAME, UPLO, N,
+     $                     ALPHA, INCX, INCY
+                        IF( REWI )
+     $                     REWIND NTRA
+                        CALL SSPR2( UPLO, N, ALPHA, XX, INCX, YY, INCY,
+     $                              AA )
+                     END IF
+*
+*                    Check if error-exit was taken incorrectly.
+*
+                     IF( .NOT.OK )THEN
+                        WRITE( NOUT, FMT = 9992 )
+                        FATAL = .TRUE.
+                        GO TO 160
+                     END IF
+*
+*                    See what data changed inside subroutines.
+*
+                     ISAME( 1 ) = UPLO.EQ.UPLOS
+                     ISAME( 2 ) = NS.EQ.N
+                     ISAME( 3 ) = ALS.EQ.ALPHA
+                     ISAME( 4 ) = LSE( XS, XX, LX )
+                     ISAME( 5 ) = INCXS.EQ.INCX
+                     ISAME( 6 ) = LSE( YS, YY, LY )
+                     ISAME( 7 ) = INCYS.EQ.INCY
+                     IF( NULL )THEN
+                        ISAME( 8 ) = LSE( AS, AA, LAA )
+                     ELSE
+                  
