@@ -2192,4 +2192,303 @@
                      IF( NULL )THEN
                         ISAME( 8 ) = LSE( AS, AA, LAA )
                      ELSE
-                  
+                        ISAME( 8 ) = LSERES( SNAME( 2: 3 ), UPLO, N, N,
+     $                               AS, AA, LDA )
+                     END IF
+                     IF( .NOT.PACKED )THEN
+                        ISAME( 9 ) = LDAS.EQ.LDA
+                     END IF
+*
+*                    If data was incorrectly changed, report and return.
+*
+                     SAME = .TRUE.
+                     DO 40 I = 1, NARGS
+                        SAME = SAME.AND.ISAME( I )
+                        IF( .NOT.ISAME( I ) )
+     $                     WRITE( NOUT, FMT = 9998 )I
+   40                CONTINUE
+                     IF( .NOT.SAME )THEN
+                        FATAL = .TRUE.
+                        GO TO 160
+                     END IF
+*
+                     IF( .NOT.NULL )THEN
+*
+*                       Check the result column by column.
+*
+                        IF( INCX.GT.0 )THEN
+                           DO 50 I = 1, N
+                              Z( I, 1 ) = X( I )
+   50                      CONTINUE
+                        ELSE
+                           DO 60 I = 1, N
+                              Z( I, 1 ) = X( N - I + 1 )
+   60                      CONTINUE
+                        END IF
+                        IF( INCY.GT.0 )THEN
+                           DO 70 I = 1, N
+                              Z( I, 2 ) = Y( I )
+   70                      CONTINUE
+                        ELSE
+                           DO 80 I = 1, N
+                              Z( I, 2 ) = Y( N - I + 1 )
+   80                      CONTINUE
+                        END IF
+                        JA = 1
+                        DO 90 J = 1, N
+                           W( 1 ) = Z( J, 2 )
+                           W( 2 ) = Z( J, 1 )
+                           IF( UPPER )THEN
+                              JJ = 1
+                              LJ = J
+                           ELSE
+                              JJ = J
+                              LJ = N - J + 1
+                           END IF
+                           CALL SMVCH( 'N', LJ, 2, ALPHA, Z( JJ, 1 ),
+     $                                 NMAX, W, 1, ONE, A( JJ, J ), 1,
+     $                                 YT, G, AA( JA ), EPS, ERR, FATAL,
+     $                                 NOUT, .TRUE. )
+                           IF( FULL )THEN
+                              IF( UPPER )THEN
+                                 JA = JA + LDA
+                              ELSE
+                                 JA = JA + LDA + 1
+                              END IF
+                           ELSE
+                              JA = JA + LJ
+                           END IF
+                           ERRMAX = MAX( ERRMAX, ERR )
+*                          If got really bad answer, report and return.
+                           IF( FATAL )
+     $                        GO TO 150
+   90                   CONTINUE
+                     ELSE
+*                       Avoid repeating tests with N.le.0.
+                        IF( N.LE.0 )
+     $                     GO TO 140
+                     END IF
+*
+  100             CONTINUE
+*
+  110          CONTINUE
+*
+  120       CONTINUE
+*
+  130    CONTINUE
+*
+  140 CONTINUE
+*
+*     Report result.
+*
+      IF( ERRMAX.LT.THRESH )THEN
+         WRITE( NOUT, FMT = 9999 )SNAME, NC
+      ELSE
+         WRITE( NOUT, FMT = 9997 )SNAME, NC, ERRMAX
+      END IF
+      GO TO 170
+*
+  150 CONTINUE
+      WRITE( NOUT, FMT = 9995 )J
+*
+  160 CONTINUE
+      WRITE( NOUT, FMT = 9996 )SNAME
+      IF( FULL )THEN
+         WRITE( NOUT, FMT = 9993 )NC, SNAME, UPLO, N, ALPHA, INCX,
+     $      INCY, LDA
+      ELSE IF( PACKED )THEN
+         WRITE( NOUT, FMT = 9994 )NC, SNAME, UPLO, N, ALPHA, INCX, INCY
+      END IF
+*
+  170 CONTINUE
+      RETURN
+*
+ 9999 FORMAT( ' ', A6, ' PASSED THE COMPUTATIONAL TESTS (', I6, ' CALL',
+     $      'S)' )
+ 9998 FORMAT( ' ******* FATAL ERROR - PARAMETER NUMBER ', I2, ' WAS CH',
+     $      'ANGED INCORRECTLY *******' )
+ 9997 FORMAT( ' ', A6, ' COMPLETED THE COMPUTATIONAL TESTS (', I6, ' C',
+     $      'ALLS)', /' ******* BUT WITH MAXIMUM TEST RATIO', F8.2,
+     $      ' - SUSPECT *******' )
+ 9996 FORMAT( ' ******* ', A6, ' FAILED ON CALL NUMBER:' )
+ 9995 FORMAT( '      THESE ARE THE RESULTS FOR COLUMN ', I3 )
+ 9994 FORMAT( 1X, I6, ': ', A6, '(''', A1, ''',', I3, ',', F4.1, ', X,',
+     $      I2, ', Y,', I2, ', AP)                     .' )
+ 9993 FORMAT( 1X, I6, ': ', A6, '(''', A1, ''',', I3, ',', F4.1, ', X,',
+     $      I2, ', Y,', I2, ', A,', I3, ')                  .' )
+ 9992 FORMAT( ' ******* FATAL ERROR - ERROR-EXIT TAKEN ON VALID CALL *',
+     $      '******' )
+*
+*     End of SCHK6.
+*
+      END
+      SUBROUTINE SCHKE( ISNUM, SRNAMT, NOUT )
+*
+*  Tests the error exits from the Level 2 Blas.
+*  Requires a special version of the error-handling routine XERBLA.
+*  ALPHA, BETA, A, X and Y should not need to be defined.
+*
+*  Auxiliary routine for test program for Level 2 Blas.
+*
+*  -- Written on 10-August-1987.
+*     Richard Hanson, Sandia National Labs.
+*     Jeremy Du Croz, NAG Central Office.
+*
+*     .. Scalar Arguments ..
+      INTEGER            ISNUM, NOUT
+      CHARACTER*6        SRNAMT
+*     .. Scalars in Common ..
+      INTEGER            INFOT, NOUTC
+      LOGICAL            LERR, OK
+*     .. Local Scalars ..
+      REAL               ALPHA, BETA
+*     .. Local Arrays ..
+      REAL               A( 1, 1 ), X( 1 ), Y( 1 )
+*     .. External Subroutines ..
+      EXTERNAL           CHKXER, SGBMV, SGEMV, SGER, SSBMV, SSPMV, SSPR,
+     $                   SSPR2, SSYMV, SSYR, SSYR2, STBMV, STBSV, STPMV,
+     $                   STPSV, STRMV, STRSV
+*     .. Common blocks ..
+      COMMON             /INFOC/INFOT, NOUTC, OK, LERR
+*     .. Executable Statements ..
+*     OK is set to .FALSE. by the special version of XERBLA or by CHKXER
+*     if anything is wrong.
+      OK = .TRUE.
+*     LERR is set to .TRUE. by the special version of XERBLA each time
+*     it is called, and is then tested and re-set by CHKXER.
+      LERR = .FALSE.
+      GO TO ( 10, 20, 30, 40, 50, 60, 70, 80,
+     $        90, 100, 110, 120, 130, 140, 150,
+     $        160 )ISNUM
+   10 INFOT = 1
+      CALL SGEMV( '/', 0, 0, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL SGEMV( 'N', -1, 0, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 3
+      CALL SGEMV( 'N', 0, -1, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 6
+      CALL SGEMV( 'N', 2, 0, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 8
+      CALL SGEMV( 'N', 0, 0, ALPHA, A, 1, X, 0, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 11
+      CALL SGEMV( 'N', 0, 0, ALPHA, A, 1, X, 1, BETA, Y, 0 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+   20 INFOT = 1
+      CALL SGBMV( '/', 0, 0, 0, 0, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL SGBMV( 'N', -1, 0, 0, 0, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 3
+      CALL SGBMV( 'N', 0, -1, 0, 0, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 4
+      CALL SGBMV( 'N', 0, 0, -1, 0, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 5
+      CALL SGBMV( 'N', 2, 0, 0, -1, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 8
+      CALL SGBMV( 'N', 0, 0, 1, 0, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 10
+      CALL SGBMV( 'N', 0, 0, 0, 0, ALPHA, A, 1, X, 0, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 13
+      CALL SGBMV( 'N', 0, 0, 0, 0, ALPHA, A, 1, X, 1, BETA, Y, 0 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+   30 INFOT = 1
+      CALL SSYMV( '/', 0, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL SSYMV( 'U', -1, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 5
+      CALL SSYMV( 'U', 2, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 7
+      CALL SSYMV( 'U', 0, ALPHA, A, 1, X, 0, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 10
+      CALL SSYMV( 'U', 0, ALPHA, A, 1, X, 1, BETA, Y, 0 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+   40 INFOT = 1
+      CALL SSBMV( '/', 0, 0, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL SSBMV( 'U', -1, 0, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 3
+      CALL SSBMV( 'U', 0, -1, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 6
+      CALL SSBMV( 'U', 0, 1, ALPHA, A, 1, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 8
+      CALL SSBMV( 'U', 0, 0, ALPHA, A, 1, X, 0, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 11
+      CALL SSBMV( 'U', 0, 0, ALPHA, A, 1, X, 1, BETA, Y, 0 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+   50 INFOT = 1
+      CALL SSPMV( '/', 0, ALPHA, A, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL SSPMV( 'U', -1, ALPHA, A, X, 1, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 6
+      CALL SSPMV( 'U', 0, ALPHA, A, X, 0, BETA, Y, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 9
+      CALL SSPMV( 'U', 0, ALPHA, A, X, 1, BETA, Y, 0 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+   60 INFOT = 1
+      CALL STRMV( '/', 'N', 'N', 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL STRMV( 'U', '/', 'N', 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 3
+      CALL STRMV( 'U', 'N', '/', 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 4
+      CALL STRMV( 'U', 'N', 'N', -1, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 6
+      CALL STRMV( 'U', 'N', 'N', 2, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 8
+      CALL STRMV( 'U', 'N', 'N', 0, A, 1, X, 0 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+   70 INFOT = 1
+      CALL STBMV( '/', 'N', 'N', 0, 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL STBMV( 'U', '/', 'N', 0, 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 3
+      CALL STBMV( 'U', 'N', '/', 0, 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 4
+      CALL STBMV( 'U', 'N', 'N', -1, 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 5
+      CALL STBMV( 'U', 'N', 'N', 0, -1, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 7
+      CALL STBMV( 'U', 'N', 'N', 0, 1, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 9
+      CALL STBMV( 'U', 'N', 'N', 0, 0, A, 1, X, 0 )
+      CALL C
