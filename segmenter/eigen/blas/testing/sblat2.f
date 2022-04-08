@@ -2840,4 +2840,337 @@
       PARAMETER          ( ZERO = 0.0, ONE = 1.0 )
 *     .. Scalar Arguments ..
       REAL               ALPHA, BETA, EPS, ERR
-      INTEGER            INCX, INCY, M, N, NMAX, NO
+      INTEGER            INCX, INCY, M, N, NMAX, NOUT
+      LOGICAL            FATAL, MV
+      CHARACTER*1        TRANS
+*     .. Array Arguments ..
+      REAL               A( NMAX, * ), G( * ), X( * ), Y( * ), YT( * ),
+     $                   YY( * )
+*     .. Local Scalars ..
+      REAL               ERRI
+      INTEGER            I, INCXL, INCYL, IY, J, JX, KX, KY, ML, NL
+      LOGICAL            TRAN
+*     .. Intrinsic Functions ..
+      INTRINSIC          ABS, MAX, SQRT
+*     .. Executable Statements ..
+      TRAN = TRANS.EQ.'T'.OR.TRANS.EQ.'C'
+      IF( TRAN )THEN
+         ML = N
+         NL = M
+      ELSE
+         ML = M
+         NL = N
+      END IF
+      IF( INCX.LT.0 )THEN
+         KX = NL
+         INCXL = -1
+      ELSE
+         KX = 1
+         INCXL = 1
+      END IF
+      IF( INCY.LT.0 )THEN
+         KY = ML
+         INCYL = -1
+      ELSE
+         KY = 1
+         INCYL = 1
+      END IF
+*
+*     Compute expected result in YT using data in A, X and Y.
+*     Compute gauges in G.
+*
+      IY = KY
+      DO 30 I = 1, ML
+         YT( IY ) = ZERO
+         G( IY ) = ZERO
+         JX = KX
+         IF( TRAN )THEN
+            DO 10 J = 1, NL
+               YT( IY ) = YT( IY ) + A( J, I )*X( JX )
+               G( IY ) = G( IY ) + ABS( A( J, I )*X( JX ) )
+               JX = JX + INCXL
+   10       CONTINUE
+         ELSE
+            DO 20 J = 1, NL
+               YT( IY ) = YT( IY ) + A( I, J )*X( JX )
+               G( IY ) = G( IY ) + ABS( A( I, J )*X( JX ) )
+               JX = JX + INCXL
+   20       CONTINUE
+         END IF
+         YT( IY ) = ALPHA*YT( IY ) + BETA*Y( IY )
+         G( IY ) = ABS( ALPHA )*G( IY ) + ABS( BETA*Y( IY ) )
+         IY = IY + INCYL
+   30 CONTINUE
+*
+*     Compute the error ratio for this result.
+*
+      ERR = ZERO
+      DO 40 I = 1, ML
+         ERRI = ABS( YT( I ) - YY( 1 + ( I - 1 )*ABS( INCY ) ) )/EPS
+         IF( G( I ).NE.ZERO )
+     $      ERRI = ERRI/G( I )
+         ERR = MAX( ERR, ERRI )
+         IF( ERR*SQRT( EPS ).GE.ONE )
+     $      GO TO 50
+   40 CONTINUE
+*     If the loop completes, all results are at least half accurate.
+      GO TO 70
+*
+*     Report fatal error.
+*
+   50 FATAL = .TRUE.
+      WRITE( NOUT, FMT = 9999 )
+      DO 60 I = 1, ML
+         IF( MV )THEN
+            WRITE( NOUT, FMT = 9998 )I, YT( I ),
+     $         YY( 1 + ( I - 1 )*ABS( INCY ) )
+         ELSE
+            WRITE( NOUT, FMT = 9998 )I, 
+     $         YY( 1 + ( I - 1 )*ABS( INCY ) ), YT(I)
+         END IF
+   60 CONTINUE
+*
+   70 CONTINUE
+      RETURN
+*
+ 9999 FORMAT( ' ******* FATAL ERROR - COMPUTED RESULT IS LESS THAN HAL',
+     $      'F ACCURATE *******', /'           EXPECTED RESULT   COMPU',
+     $      'TED RESULT' )
+ 9998 FORMAT( 1X, I7, 2G18.6 )
+*
+*     End of SMVCH.
+*
+      END
+      LOGICAL FUNCTION LSE( RI, RJ, LR )
+*
+*  Tests if two arrays are identical.
+*
+*  Auxiliary routine for test program for Level 2 Blas.
+*
+*  -- Written on 10-August-1987.
+*     Richard Hanson, Sandia National Labs.
+*     Jeremy Du Croz, NAG Central Office.
+*
+*     .. Scalar Arguments ..
+      INTEGER            LR
+*     .. Array Arguments ..
+      REAL               RI( * ), RJ( * )
+*     .. Local Scalars ..
+      INTEGER            I
+*     .. Executable Statements ..
+      DO 10 I = 1, LR
+         IF( RI( I ).NE.RJ( I ) )
+     $      GO TO 20
+   10 CONTINUE
+      LSE = .TRUE.
+      GO TO 30
+   20 CONTINUE
+      LSE = .FALSE.
+   30 RETURN
+*
+*     End of LSE.
+*
+      END
+      LOGICAL FUNCTION LSERES( TYPE, UPLO, M, N, AA, AS, LDA )
+*
+*  Tests if selected elements in two arrays are equal.
+*
+*  TYPE is 'GE', 'SY' or 'SP'.
+*
+*  Auxiliary routine for test program for Level 2 Blas.
+*
+*  -- Written on 10-August-1987.
+*     Richard Hanson, Sandia National Labs.
+*     Jeremy Du Croz, NAG Central Office.
+*
+*     .. Scalar Arguments ..
+      INTEGER            LDA, M, N
+      CHARACTER*1        UPLO
+      CHARACTER*2        TYPE
+*     .. Array Arguments ..
+      REAL               AA( LDA, * ), AS( LDA, * )
+*     .. Local Scalars ..
+      INTEGER            I, IBEG, IEND, J
+      LOGICAL            UPPER
+*     .. Executable Statements ..
+      UPPER = UPLO.EQ.'U'
+      IF( TYPE.EQ.'GE' )THEN
+         DO 20 J = 1, N
+            DO 10 I = M + 1, LDA
+               IF( AA( I, J ).NE.AS( I, J ) )
+     $            GO TO 70
+   10       CONTINUE
+   20    CONTINUE
+      ELSE IF( TYPE.EQ.'SY' )THEN
+         DO 50 J = 1, N
+            IF( UPPER )THEN
+               IBEG = 1
+               IEND = J
+            ELSE
+               IBEG = J
+               IEND = N
+            END IF
+            DO 30 I = 1, IBEG - 1
+               IF( AA( I, J ).NE.AS( I, J ) )
+     $            GO TO 70
+   30       CONTINUE
+            DO 40 I = IEND + 1, LDA
+               IF( AA( I, J ).NE.AS( I, J ) )
+     $            GO TO 70
+   40       CONTINUE
+   50    CONTINUE
+      END IF
+*
+      LSERES = .TRUE.
+      GO TO 80
+   70 CONTINUE
+      LSERES = .FALSE.
+   80 RETURN
+*
+*     End of LSERES.
+*
+      END
+      REAL FUNCTION SBEG( RESET )
+*
+*  Generates random numbers uniformly distributed between -0.5 and 0.5.
+*
+*  Auxiliary routine for test program for Level 2 Blas.
+*
+*  -- Written on 10-August-1987.
+*     Richard Hanson, Sandia National Labs.
+*     Jeremy Du Croz, NAG Central Office.
+*
+*     .. Scalar Arguments ..
+      LOGICAL            RESET
+*     .. Local Scalars ..
+      INTEGER            I, IC, MI
+*     .. Save statement ..
+      SAVE               I, IC, MI
+*     .. Intrinsic Functions ..
+      INTRINSIC          REAL
+*     .. Executable Statements ..
+      IF( RESET )THEN
+*        Initialize local variables.
+         MI = 891
+         I = 7
+         IC = 0
+         RESET = .FALSE.
+      END IF
+*
+*     The sequence of values of I is bounded between 1 and 999.
+*     If initial I = 1,2,3,6,7 or 9, the period will be 50.
+*     If initial I = 4 or 8, the period will be 25.
+*     If initial I = 5, the period will be 10.
+*     IC is used to break up the period by skipping 1 value of I in 6.
+*
+      IC = IC + 1
+   10 I = I*MI
+      I = I - 1000*( I/1000 )
+      IF( IC.GE.5 )THEN
+         IC = 0
+         GO TO 10
+      END IF
+      SBEG = REAL( I - 500 )/1001.0
+      RETURN
+*
+*     End of SBEG.
+*
+      END
+      REAL FUNCTION SDIFF( X, Y )
+*
+*  Auxiliary routine for test program for Level 2 Blas.
+*
+*  -- Written on 10-August-1987.
+*     Richard Hanson, Sandia National Labs.
+*
+*     .. Scalar Arguments ..
+      REAL               X, Y
+*     .. Executable Statements ..
+      SDIFF = X - Y
+      RETURN
+*
+*     End of SDIFF.
+*
+      END
+      SUBROUTINE CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+*
+*  Tests whether XERBLA has detected an error when it should.
+*
+*  Auxiliary routine for test program for Level 2 Blas.
+*
+*  -- Written on 10-August-1987.
+*     Richard Hanson, Sandia National Labs.
+*     Jeremy Du Croz, NAG Central Office.
+*
+*     .. Scalar Arguments ..
+      INTEGER            INFOT, NOUT
+      LOGICAL            LERR, OK
+      CHARACTER*6        SRNAMT
+*     .. Executable Statements ..
+      IF( .NOT.LERR )THEN
+         WRITE( NOUT, FMT = 9999 )INFOT, SRNAMT
+         OK = .FALSE.
+      END IF
+      LERR = .FALSE.
+      RETURN
+*
+ 9999 FORMAT( ' ***** ILLEGAL VALUE OF PARAMETER NUMBER ', I2, ' NOT D',
+     $      'ETECTED BY ', A6, ' *****' )
+*
+*     End of CHKXER.
+*
+      END
+      SUBROUTINE XERBLA( SRNAME, INFO )
+*
+*  This is a special version of XERBLA to be used only as part of
+*  the test program for testing error exits from the Level 2 BLAS
+*  routines.
+*
+*  XERBLA  is an error handler for the Level 2 BLAS routines.
+*
+*  It is called by the Level 2 BLAS routines if an input parameter is
+*  invalid.
+*
+*  Auxiliary routine for test program for Level 2 Blas.
+*
+*  -- Written on 10-August-1987.
+*     Richard Hanson, Sandia National Labs.
+*     Jeremy Du Croz, NAG Central Office.
+*
+*     .. Scalar Arguments ..
+      INTEGER            INFO
+      CHARACTER*6        SRNAME
+*     .. Scalars in Common ..
+      INTEGER            INFOT, NOUT
+      LOGICAL            LERR, OK
+      CHARACTER*6        SRNAMT
+*     .. Common blocks ..
+      COMMON             /INFOC/INFOT, NOUT, OK, LERR
+      COMMON             /SRNAMC/SRNAMT
+*     .. Executable Statements ..
+      LERR = .TRUE.
+      IF( INFO.NE.INFOT )THEN
+         IF( INFOT.NE.0 )THEN
+            WRITE( NOUT, FMT = 9999 )INFO, INFOT
+         ELSE
+            WRITE( NOUT, FMT = 9997 )INFO
+         END IF
+         OK = .FALSE.
+      END IF
+      IF( SRNAME.NE.SRNAMT )THEN
+         WRITE( NOUT, FMT = 9998 )SRNAME, SRNAMT
+         OK = .FALSE.
+      END IF
+      RETURN
+*
+ 9999 FORMAT( ' ******* XERBLA WAS CALLED WITH INFO = ', I6, ' INSTEAD',
+     $      ' OF ', I2, ' *******' )
+ 9998 FORMAT( ' ******* XERBLA WAS CALLED WITH SRNAME = ', A6, ' INSTE',
+     $      'AD OF ', A6, ' *******' )
+ 9997 FORMAT( ' ******* XERBLA WAS CALLED WITH INFO = ', I6,
+     $      ' *******' )
+*
+*     End of XERBLA
+*
+      END
+
