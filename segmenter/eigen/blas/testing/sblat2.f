@@ -2491,4 +2491,353 @@
       CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
       INFOT = 9
       CALL STBMV( 'U', 'N', 'N', 0, 0, A, 1, X, 0 )
-      CALL C
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+   80 INFOT = 1
+      CALL STPMV( '/', 'N', 'N', 0, A, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL STPMV( 'U', '/', 'N', 0, A, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 3
+      CALL STPMV( 'U', 'N', '/', 0, A, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 4
+      CALL STPMV( 'U', 'N', 'N', -1, A, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 7
+      CALL STPMV( 'U', 'N', 'N', 0, A, X, 0 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+   90 INFOT = 1
+      CALL STRSV( '/', 'N', 'N', 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL STRSV( 'U', '/', 'N', 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 3
+      CALL STRSV( 'U', 'N', '/', 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 4
+      CALL STRSV( 'U', 'N', 'N', -1, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 6
+      CALL STRSV( 'U', 'N', 'N', 2, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 8
+      CALL STRSV( 'U', 'N', 'N', 0, A, 1, X, 0 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+  100 INFOT = 1
+      CALL STBSV( '/', 'N', 'N', 0, 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL STBSV( 'U', '/', 'N', 0, 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 3
+      CALL STBSV( 'U', 'N', '/', 0, 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 4
+      CALL STBSV( 'U', 'N', 'N', -1, 0, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 5
+      CALL STBSV( 'U', 'N', 'N', 0, -1, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 7
+      CALL STBSV( 'U', 'N', 'N', 0, 1, A, 1, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 9
+      CALL STBSV( 'U', 'N', 'N', 0, 0, A, 1, X, 0 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+  110 INFOT = 1
+      CALL STPSV( '/', 'N', 'N', 0, A, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL STPSV( 'U', '/', 'N', 0, A, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 3
+      CALL STPSV( 'U', 'N', '/', 0, A, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 4
+      CALL STPSV( 'U', 'N', 'N', -1, A, X, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 7
+      CALL STPSV( 'U', 'N', 'N', 0, A, X, 0 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+  120 INFOT = 1
+      CALL SGER( -1, 0, ALPHA, X, 1, Y, 1, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL SGER( 0, -1, ALPHA, X, 1, Y, 1, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 5
+      CALL SGER( 0, 0, ALPHA, X, 0, Y, 1, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 7
+      CALL SGER( 0, 0, ALPHA, X, 1, Y, 0, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 9
+      CALL SGER( 2, 0, ALPHA, X, 1, Y, 1, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+  130 INFOT = 1
+      CALL SSYR( '/', 0, ALPHA, X, 1, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL SSYR( 'U', -1, ALPHA, X, 1, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 5
+      CALL SSYR( 'U', 0, ALPHA, X, 0, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 7
+      CALL SSYR( 'U', 2, ALPHA, X, 1, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+  140 INFOT = 1
+      CALL SSPR( '/', 0, ALPHA, X, 1, A )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL SSPR( 'U', -1, ALPHA, X, 1, A )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 5
+      CALL SSPR( 'U', 0, ALPHA, X, 0, A )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+  150 INFOT = 1
+      CALL SSYR2( '/', 0, ALPHA, X, 1, Y, 1, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL SSYR2( 'U', -1, ALPHA, X, 1, Y, 1, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 5
+      CALL SSYR2( 'U', 0, ALPHA, X, 0, Y, 1, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 7
+      CALL SSYR2( 'U', 0, ALPHA, X, 1, Y, 0, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 9
+      CALL SSYR2( 'U', 2, ALPHA, X, 1, Y, 1, A, 1 )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      GO TO 170
+  160 INFOT = 1
+      CALL SSPR2( '/', 0, ALPHA, X, 1, Y, 1, A )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 2
+      CALL SSPR2( 'U', -1, ALPHA, X, 1, Y, 1, A )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 5
+      CALL SSPR2( 'U', 0, ALPHA, X, 0, Y, 1, A )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+      INFOT = 7
+      CALL SSPR2( 'U', 0, ALPHA, X, 1, Y, 0, A )
+      CALL CHKXER( SRNAMT, INFOT, NOUT, LERR, OK )
+*
+  170 IF( OK )THEN
+         WRITE( NOUT, FMT = 9999 )SRNAMT
+      ELSE
+         WRITE( NOUT, FMT = 9998 )SRNAMT
+      END IF
+      RETURN
+*
+ 9999 FORMAT( ' ', A6, ' PASSED THE TESTS OF ERROR-EXITS' )
+ 9998 FORMAT( ' ******* ', A6, ' FAILED THE TESTS OF ERROR-EXITS *****',
+     $      '**' )
+*
+*     End of SCHKE.
+*
+      END
+      SUBROUTINE SMAKE( TYPE, UPLO, DIAG, M, N, A, NMAX, AA, LDA, KL,
+     $                  KU, RESET, TRANSL )
+*
+*  Generates values for an M by N matrix A within the bandwidth
+*  defined by KL and KU.
+*  Stores the values in the array AA in the data structure required
+*  by the routine, with unwanted elements set to rogue value.
+*
+*  TYPE is 'GE', 'GB', 'SY', 'SB', 'SP', 'TR', 'TB' OR 'TP'.
+*
+*  Auxiliary routine for test program for Level 2 Blas.
+*
+*  -- Written on 10-August-1987.
+*     Richard Hanson, Sandia National Labs.
+*     Jeremy Du Croz, NAG Central Office.
+*
+*     .. Parameters ..
+      REAL               ZERO, ONE
+      PARAMETER          ( ZERO = 0.0, ONE = 1.0 )
+      REAL               ROGUE
+      PARAMETER          ( ROGUE = -1.0E10 )
+*     .. Scalar Arguments ..
+      REAL               TRANSL
+      INTEGER            KL, KU, LDA, M, N, NMAX
+      LOGICAL            RESET
+      CHARACTER*1        DIAG, UPLO
+      CHARACTER*2        TYPE
+*     .. Array Arguments ..
+      REAL               A( NMAX, * ), AA( * )
+*     .. Local Scalars ..
+      INTEGER            I, I1, I2, I3, IBEG, IEND, IOFF, J, KK
+      LOGICAL            GEN, LOWER, SYM, TRI, UNIT, UPPER
+*     .. External Functions ..
+      REAL               SBEG
+      EXTERNAL           SBEG
+*     .. Intrinsic Functions ..
+      INTRINSIC          MAX, MIN
+*     .. Executable Statements ..
+      GEN = TYPE( 1: 1 ).EQ.'G'
+      SYM = TYPE( 1: 1 ).EQ.'S'
+      TRI = TYPE( 1: 1 ).EQ.'T'
+      UPPER = ( SYM.OR.TRI ).AND.UPLO.EQ.'U'
+      LOWER = ( SYM.OR.TRI ).AND.UPLO.EQ.'L'
+      UNIT = TRI.AND.DIAG.EQ.'U'
+*
+*     Generate data in array A.
+*
+      DO 20 J = 1, N
+         DO 10 I = 1, M
+            IF( GEN.OR.( UPPER.AND.I.LE.J ).OR.( LOWER.AND.I.GE.J ) )
+     $          THEN
+               IF( ( I.LE.J.AND.J - I.LE.KU ).OR.
+     $             ( I.GE.J.AND.I - J.LE.KL ) )THEN
+                  A( I, J ) = SBEG( RESET ) + TRANSL
+               ELSE
+                  A( I, J ) = ZERO
+               END IF
+               IF( I.NE.J )THEN
+                  IF( SYM )THEN
+                     A( J, I ) = A( I, J )
+                  ELSE IF( TRI )THEN
+                     A( J, I ) = ZERO
+                  END IF
+               END IF
+            END IF
+   10    CONTINUE
+         IF( TRI )
+     $      A( J, J ) = A( J, J ) + ONE
+         IF( UNIT )
+     $      A( J, J ) = ONE
+   20 CONTINUE
+*
+*     Store elements in array AS in data structure required by routine.
+*
+      IF( TYPE.EQ.'GE' )THEN
+         DO 50 J = 1, N
+            DO 30 I = 1, M
+               AA( I + ( J - 1 )*LDA ) = A( I, J )
+   30       CONTINUE
+            DO 40 I = M + 1, LDA
+               AA( I + ( J - 1 )*LDA ) = ROGUE
+   40       CONTINUE
+   50    CONTINUE
+      ELSE IF( TYPE.EQ.'GB' )THEN
+         DO 90 J = 1, N
+            DO 60 I1 = 1, KU + 1 - J
+               AA( I1 + ( J - 1 )*LDA ) = ROGUE
+   60       CONTINUE
+            DO 70 I2 = I1, MIN( KL + KU + 1, KU + 1 + M - J )
+               AA( I2 + ( J - 1 )*LDA ) = A( I2 + J - KU - 1, J )
+   70       CONTINUE
+            DO 80 I3 = I2, LDA
+               AA( I3 + ( J - 1 )*LDA ) = ROGUE
+   80       CONTINUE
+   90    CONTINUE
+      ELSE IF( TYPE.EQ.'SY'.OR.TYPE.EQ.'TR' )THEN
+         DO 130 J = 1, N
+            IF( UPPER )THEN
+               IBEG = 1
+               IF( UNIT )THEN
+                  IEND = J - 1
+               ELSE
+                  IEND = J
+               END IF
+            ELSE
+               IF( UNIT )THEN
+                  IBEG = J + 1
+               ELSE
+                  IBEG = J
+               END IF
+               IEND = N
+            END IF
+            DO 100 I = 1, IBEG - 1
+               AA( I + ( J - 1 )*LDA ) = ROGUE
+  100       CONTINUE
+            DO 110 I = IBEG, IEND
+               AA( I + ( J - 1 )*LDA ) = A( I, J )
+  110       CONTINUE
+            DO 120 I = IEND + 1, LDA
+               AA( I + ( J - 1 )*LDA ) = ROGUE
+  120       CONTINUE
+  130    CONTINUE
+      ELSE IF( TYPE.EQ.'SB'.OR.TYPE.EQ.'TB' )THEN
+         DO 170 J = 1, N
+            IF( UPPER )THEN
+               KK = KL + 1
+               IBEG = MAX( 1, KL + 2 - J )
+               IF( UNIT )THEN
+                  IEND = KL
+               ELSE
+                  IEND = KL + 1
+               END IF
+            ELSE
+               KK = 1
+               IF( UNIT )THEN
+                  IBEG = 2
+               ELSE
+                  IBEG = 1
+               END IF
+               IEND = MIN( KL + 1, 1 + M - J )
+            END IF
+            DO 140 I = 1, IBEG - 1
+               AA( I + ( J - 1 )*LDA ) = ROGUE
+  140       CONTINUE
+            DO 150 I = IBEG, IEND
+               AA( I + ( J - 1 )*LDA ) = A( I + J - KK, J )
+  150       CONTINUE
+            DO 160 I = IEND + 1, LDA
+               AA( I + ( J - 1 )*LDA ) = ROGUE
+  160       CONTINUE
+  170    CONTINUE
+      ELSE IF( TYPE.EQ.'SP'.OR.TYPE.EQ.'TP' )THEN
+         IOFF = 0
+         DO 190 J = 1, N
+            IF( UPPER )THEN
+               IBEG = 1
+               IEND = J
+            ELSE
+               IBEG = J
+               IEND = N
+            END IF
+            DO 180 I = IBEG, IEND
+               IOFF = IOFF + 1
+               AA( IOFF ) = A( I, J )
+               IF( I.EQ.J )THEN
+                  IF( UNIT )
+     $               AA( IOFF ) = ROGUE
+               END IF
+  180       CONTINUE
+  190    CONTINUE
+      END IF
+      RETURN
+*
+*     End of SMAKE.
+*
+      END
+      SUBROUTINE SMVCH( TRANS, M, N, ALPHA, A, NMAX, X, INCX, BETA, Y,
+     $                  INCY, YT, G, YY, EPS, ERR, FATAL, NOUT, MV )
+*
+*  Checks the results of the computational tests.
+*
+*  Auxiliary routine for test program for Level 2 Blas.
+*
+*  -- Written on 10-August-1987.
+*     Richard Hanson, Sandia National Labs.
+*     Jeremy Du Croz, NAG Central Office.
+*
+*     .. Parameters ..
+      REAL               ZERO, ONE
+      PARAMETER          ( ZERO = 0.0, ONE = 1.0 )
+*     .. Scalar Arguments ..
+      REAL               ALPHA, BETA, EPS, ERR
+      INTEGER            INCX, INCY, M, N, NMAX, NO
