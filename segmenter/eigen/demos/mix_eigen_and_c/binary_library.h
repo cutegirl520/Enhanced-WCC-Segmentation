@@ -53,4 +53,19 @@ extern "C"
   void   Map_MatrixXd_copy       (struct C_Map_MatrixXd *dst,
                                   const struct C_Map_MatrixXd *src);
   void   Map_MatrixXd_copy_matrix(struct C_Map_MatrixXd *dst,
-                                  const struct C_MatrixXd *s
+                                  const struct C_MatrixXd *src);  
+  void   Map_MatrixXd_set_coeff  (struct C_Map_MatrixXd *m,
+                                  int i, int j, double coeff);
+  double Map_MatrixXd_get_coeff  (const struct C_Map_MatrixXd *m,
+                                  int i, int j);
+  void   Map_MatrixXd_print      (const struct C_Map_MatrixXd *m);
+  void   Map_MatrixXd_add        (const struct C_Map_MatrixXd *m1,
+                                  const struct C_Map_MatrixXd *m2,
+                                  struct C_Map_MatrixXd *result);  
+  void   Map_MatrixXd_multiply   (const struct C_Map_MatrixXd *m1,
+                                  const struct C_Map_MatrixXd *m2,
+                                  struct C_Map_MatrixXd *result);
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
