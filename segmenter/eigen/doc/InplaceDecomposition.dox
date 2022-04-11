@@ -1,0 +1,40 @@
+namespace Eigen {
+
+/** \eigenManualPage InplaceDecomposition Inplace matrix decompositions
+
+Starting from %Eigen 3.3, the LU, Cholesky, and QR decompositions can operate \em inplace, that is, directly within the given input matrix.
+This feature is especially useful when dealing with huae matrices, and or when the available memory is very limited (embedded systems).
+
+To this end, the respective decomposition class must be instantiated with a Ref<> matrix type, and the decomposition object must be constructed with the input matrix as argument. As an example, let us consider an inplace LU decomposition with partial pivoting.
+
+Let's start with the basic inclusions, and declaration of a 2x2 matrix \c A:
+
+<table class="example">
+<tr><th>code</th><th>output</th></tr>
+<tr>
+  <td>\snippet TutorialInplaceLU.cpp init
+  </td>
+  <td>\snippet TutorialInplaceLU.out init
+  </td>
+</tr>
+</table>
+
+No surprise here! Then, let's declare our inplace LU object \c lu, and check the content of the matrix \c A:
+
+<table class="example">
+<tr>
+  <td>\snippet TutorialInplaceLU.cpp declaration
+  </td>
+  <td>\snippet TutorialInplaceLU.out declaration
+  </td>
+</tr>
+</table>
+
+Here, the \c lu object computes and stores the \c L and \c U factors within the memory held by the matrix \c A.
+The coefficients of \c A have thus been destroyed during the factorization, and replaced by the L and U factors as one can verify:
+
+<table class="example">
+<tr>
+  <td>\snippet TutorialInplaceLU.cpp matrixLU
+  </td>
+  <td>\
