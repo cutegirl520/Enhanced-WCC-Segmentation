@@ -1,0 +1,150 @@
+namespace Eigen {
+
+/** \page TopicInsideEigenExample What happens inside Eigen, on a simple example
+
+\eigenAutoToc
+
+<hr>
+
+
+Consider the following example program:
+
+\code
+#include<Eigen/Core>
+
+int main()
+{
+  int size = 50;
+  // VectorXf is a vector of floats, with dynamic size.
+  Eigen::VectorXf u(size), v(size), w(size);
+  u = v + w;
+}
+\endcode
+
+The goal of this page is to understand how Eigen compiles it, assuming that SSE2 vectorization is enabled (GCC option -msse2).
+
+\section WhyInteresting Why it's interesting
+
+Maybe you think, that the above example program is so simple, that compiling it shouldn't involve anything interesting. So before starting, let us explain what is nontrivial in compiling it correctly -- that is, producing optimized code -- so that the complexity of Eigen, that we'll explain here, is really useful.
+
+Look at the line of code
+\code
+  u = v + w;   //   (*)
+\endcode
+
+The first important thing about compiling it, is that the arrays should be traversed only once, like
+\code
+  for(int i = 0; i < size; i++) u[i] = v[i] + w[i];
+\endcode
+The problem is that if we make a naive C++ library where the VectorXf class has an operator+ returning a VectorXf, then the line of code (*) will amount to:
+\code
+  VectorXf tmp = v + w;
+  VectorXf u = tmp;
+\endcode
+Obviously, the introduction of the temporary \a tmp here is useless. It has a very bad effect on performance, first because the creation of \a tmp requires a dynamic memory allocation in this context, and second as there are now two for loops:
+\code
+  for(int i = 0; i < size; i++) tmp[i] = v[i] + w[i];
+  for(int i = 0; i < size; i++) u[i] = tmp[i];
+\endcode
+Traversing the arrays twice instead of once is terrible for performance, as it means that we do many redundant memory accesses.
+
+The second important thing about compiling the above program, is to make correct use of SSE2 instructions. Notice that Eigen also supports AltiVec and that all the discussion that we make here applies also to AltiVec.
+
+SSE2, like AltiVec, is a set of instructions allowing to perform computations on packets of 128 bits at once. Since a float is 32 bits, this means that SSE2 instructions can handle 4 floats at once. This means that, if correctly used, they can make our computation go up to 4x faster.
+
+However, in the above program, we have chosen size=50, so our vectors consist of 50 float's, and 50 is not a multiple of 4. This means that we cannot hope to do all of that computation using SSE2 instructions. The second best thing, to which we should aim, is to handle the 48 first coefficients with SSE2 instructions, since 48 is the biggest multiple of 4 below 50, and then handle separately, without SSE2, the 49th and 50th coefficients. Something like this:
+
+\code
+  for(int i = 0; i < 4*(size/4); i+=4) u.packet(i)  = v.packet(i) + w.packet(i);
+  for(int i = 4*(size/4); i < size; i++) u[i] = v[i] + w[i];
+\endcode
+
+So let us look line by line at our example program, and let's follow Eigen as it compiles it.
+
+\section ConstructingVectors Constructing vectors
+
+Let's analyze the first line:
+
+\code
+  Eigen::VectorXf u(size), v(size), w(size);
+\endcode
+
+First of all, VectorXf is the following typedef:
+\code
+  typedef Matrix<float, Dynamic, 1> VectorXf;
+\endcode
+
+The class template Matrix is declared in src/Core/util/ForwardDeclarations.h with 6 template parameters, but the last 3 are automatically determined by the first 3. So you don't need to worry about them for now. Here, Matrix\<float, Dynamic, 1\> means a matrix of floats, with a dynamic number of rows and 1 column.
+
+The Matrix class inherits a base class, MatrixBase. Don't worry about it, for now it suffices to say that MatrixBase is what unifies matrices/vectors and all the expressions types -- more on that below.
+
+When we do
+\code
+  Eigen::VectorXf u(size);
+\endcode
+the constructor that is called is Matrix::Matrix(int), in src/Core/Matrix.h. Besides some assertions, all it does is to construct the \a m_storage member, which is of type DenseStorage\<float, Dynamic, Dynamic, 1\>.
+
+You may wonder, isn't it overengineering to have the storage in a separate class? The reason is that the Matrix class template covers all kinds of matrices and vector: both fixed-size and dynamic-size. The storage method is not the same in these two cases. For fixed-size, the matrix coefficients are stored as a plain member array. For dynamic-size, the coefficients will be stored as a pointer to a dynamically-allocated array. Because of this, we need to abstract storage away from the Matrix class. That's DenseStorage.
+
+Let's look at this constructor, in src/Core/DenseStorage.h. You can see that there are many partial template specializations of DenseStorages here, treating separately the cases where dimensions are Dynamic or fixed at compile-time. The partial specialization that we are looking at is:
+\code
+template<typename T, int _Cols> class DenseStorage<T, Dynamic, Dynamic, _Cols>
+\endcode
+
+Here, the constructor called is DenseStorage::DenseStorage(int size, int rows, int columns)
+with size=50, rows=50, columns=1.
+
+Here is this constructor:
+\code
+inline DenseStorage(int size, int rows, int) : m_data(internal::aligned_new<T>(size)), m_rows(rows) {}
+\endcode
+
+Here, the \a m_data member is the actual array of coefficients of the matrix. As you see, it is dynamically allocated. Rather than calling new[] or malloc(), as you can see, we have our own internal::aligned_new defined in src/Core/util/Memory.h. What it does is that if vectorization is enabled, then it uses a platform-specific call to allocate a 128-bit-aligned array, as that is very useful for vectorization with both SSE2 and AltiVec. If vectorization is disabled, it amounts to the standard new[].
+
+As you can see, the constructor also sets the \a m_rows member to \a size. Notice that there is no \a m_columns member: indeed, in this partial specialization of DenseStorage, we know the number of columns at compile-time, since the _Cols template parameter is different from Dynamic. Namely, in our case, _Cols is 1, which is to say that our vector is just a matrix with 1 column. Hence, there is no need to store the number of columns as a runtime variable.
+
+When you call VectorXf::data() to get the pointer to the array of coefficients, it returns DenseStorage::data() which returns the \a m_data member.
+
+When you call VectorXf::size() to get the size of the vector, this is actually a method in the base class MatrixBase. It determines that the vector is a column-vector, since ColsAtCompileTime==1 (this comes from the template parameters in the typedef VectorXf). It deduces that the size is the number of rows, so it returns VectorXf::rows(), which returns DenseStorage::rows(), which returns the \a m_rows member, which was set to \a size by the constructor.
+
+\section ConstructionOfSumXpr Construction of the sum expression
+
+Now that our vectors are constructed, let's move on to the next line:
+
+\code
+u = v + w;
+\endcode
+
+The executive summary is that operator+ returns a "sum of vectors" expression, but doesn't actually perform the computation. It is the operator=, whose call occurs thereafter, that does the computation.
+
+Let us now see what Eigen does when it sees this:
+
+\code
+v + w
+\endcode
+
+Here, v and w are of type VectorXf, which is a typedef for a specialization of Matrix (as we explained above), which is a subclass of MatrixBase. So what is being called is
+
+\code
+MatrixBase::operator+(const MatrixBase&)
+\endcode
+
+The return type of this operator is
+\code
+CwiseBinaryOp<internal::scalar_sum_op<float>, VectorXf, VectorXf>
+\endcode
+The CwiseBinaryOp class is our first encounter with an expression template. As we said, the operator+ doesn't by itself perform any computation, it just returns an abstract "sum of vectors" expression. Since there are also "difference of vectors" and "coefficient-wise product of vectors" expressions, we unify them all as "coefficient-wise binary operations", which we abbreviate as "CwiseBinaryOp". "Coefficient-wise" means that the operations is performed coefficient by coefficient. "binary" means that there are two operands -- we are adding two vectors with one another.
+
+Now you might ask, what if we did something like
+
+\code
+v + w + u;
+\endcode
+
+The first v + w would return a CwiseBinaryOp as above, so in order for this to compile, we'd need to define an operator+ also in the class CwiseBinaryOp... at this point it starts looking like a nightmare: are we going to have to define all operators in each of the expression classes (as you guessed, CwiseBinaryOp is only one of many) ? This looks like a dead end!
+
+The solution is that CwiseBinaryOp itself, as well as Matrix and all the other expression types, is a subclass of MatrixBase. So it is enough to define once and for all the operators in class MatrixBase.
+
+Since MatrixBase is the common base class of different subclasses, the aspects that depend on the subclass must be abstracted from MatrixBase. This is called polymorphism.
+
+The classical approach to polymorphism in C++ is by means of virtual 
