@@ -147,4 +147,180 @@ The solution is that CwiseBinaryOp itself, as well as Matrix and all the other e
 
 Since MatrixBase is the common base class of different subclasses, the aspects that depend on the subclass must be abstracted from MatrixBase. This is called polymorphism.
 
-The classical approach to polymorphism in C++ is by means of virtual 
+The classical approach to polymorphism in C++ is by means of virtual functions. This is dynamic polymorphism. Here we don't want dynamic polymorphism because the whole design of Eigen is based around the assumption that all the complexity, all the abstraction, gets resolved at compile-time. This is crucial: if the abstraction can't get resolved at compile-time, Eigen's compile-time optimization mechanisms become useless, not to mention that if that abstraction has to be resolved at runtime it'll incur an overhead by itself.
+
+Here, what we want is to have a single class MatrixBase as the base of many subclasses, in such a way that each MatrixBase object (be it a matrix, or vector, or any kind of expression) knows at compile-time (as opposed to run-time) of which particular subclass it is an object (i.e. whether it is a matrix, or an expression, and what kind of expression).
+
+The solution is the <a href="http://en.wikipedia.org/wiki/Curiously_Recurring_Template_Pattern">Curiously Recurring Template Pattern</a>. Let's do the break now. Hopefully you can read this wikipedia page during the break if needed, but it won't be allowed during the exam.
+
+In short, MatrixBase takes a template parameter \a Derived. Whenever we define a subclass Subclass, we actually make Subclass inherit MatrixBase\<Subclass\>. The point is that different subclasses inherit different MatrixBase types. Thanks to this, whenever we have an object of a subclass, and we call on it some MatrixBase method, we still remember even from inside the MatrixBase method which particular subclass we're talking about.
+
+This means that we can put almost all the methods and operators in the base class MatrixBase, and have only the bare minimum in the subclasses. If you look at the subclasses in Eigen, like for instance the CwiseBinaryOp class, they have very few methods. There are coeff() and sometimes coeffRef() methods for access to the coefficients, there are rows() and cols() methods returning the number of rows and columns, but there isn't much more than that. All the meat is in MatrixBase, so it only needs to be coded once for all kinds of expressions, matrices, and vectors.
+
+So let's end this digression and come back to the piece of code from our example program that we were currently analyzing,
+
+\code
+v + w
+\endcode
+
+Now that MatrixBase is a good friend, let's write fully the prototype of the operator+ that gets called here (this code is from src/Core/MatrixBase.h):
+
+\code
+template<typename Derived>
+class MatrixBase
+{
+  // ...
+
+  template<typename OtherDerived>
+  const CwiseBinaryOp<internal::scalar_sum_op<typename internal::traits<Derived>::Scalar>, Derived, OtherDerived>
+  operator+(const MatrixBase<OtherDerived> &other) const;
+
+  // ...
+};
+\endcode
+
+Here of course, \a Derived and \a OtherDerived are VectorXf.
+
+As we said, CwiseBinaryOp is also used for other operations such as substration, so it takes another template parameter determining the operation that will be applied to coefficients. This template parameter is a functor, that is, a class in which we have an operator() so it behaves like a function. Here, the functor used is internal::scalar_sum_op. It is defined in src/Core/Functors.h.
+
+Let us now explain the internal::traits here. The internal::scalar_sum_op class takes one template parameter: the type of the numbers to handle. Here of course we want to pass the scalar type (a.k.a. numeric type) of VectorXf, which is \c float. How do we determine which is the scalar type of \a Derived ? Throughout Eigen, all matrix and expression types define a typedef \a Scalar which gives its scalar type. For example, VectorXf::Scalar is a typedef for \c float. So here, if life was easy, we could find the numeric type of \a Derived as just
+\code
+typename Derived::Scalar
+\endcode
+Unfortunately, we can't do that here, as the compiler would complain that the type Derived hasn't yet been defined. So we use a workaround: in src/Core/util/ForwardDeclarations.h, we declared (not defined!) all our subclasses, like Matrix, and we also declared the following class template:
+\code
+template<typename T> struct internal::traits;
+\endcode
+In src/Core/Matrix.h, right \em before the definition of class Matrix, we define a partial specialization of internal::traits for T=Matrix\<any template parameters\>. In this specialization of internal::traits, we define the Scalar typedef. So when we actually define Matrix, it is legal to refer to "typename internal::traits\<Matrix\>::Scalar".
+
+Anyway, we have declared our operator+. In our case, where \a Derived and \a OtherDerived are VectorXf, the above declaration amounts to:
+\code
+class MatrixBase<VectorXf>
+{
+  // ...
+
+  const CwiseBinaryOp<internal::scalar_sum_op<float>, VectorXf, VectorXf>
+  operator+(const MatrixBase<VectorXf> &other) const;
+
+  // ...
+};
+\endcode
+
+Let's now jump to src/Core/CwiseBinaryOp.h to see how it is defined. As you can see there, all it does is to return a CwiseBinaryOp object, and this object is just storing references to the left-hand-side and right-hand-side expressions -- here, these are the vectors \a v and \a w. Well, the CwiseBinaryOp object is also storing an instance of the (empty) functor class, but you shouldn't worry about it as that is a minor implementation detail.
+
+Thus, the operator+ hasn't performed any actual computation. To summarize, the operation \a v + \a w just returned an object of type CwiseBinaryOp which did nothing else than just storing references to \a v and \a w.
+
+\section Assignment The assignment
+
+At this point, the expression \a v + \a w has finished evaluating, so, in the process of compiling the line of code
+\code
+u = v + w;
+\endcode
+we now enter the operator=.
+
+What operator= is being called here? The vector u is an object of class VectorXf, i.e. Matrix. In src/Core/Matrix.h, inside the definition of class Matrix, we see this:
+\code
+    template<typename OtherDerived>
+    inline Matrix& operator=(const MatrixBase<OtherDerived>& other)
+    {
+      eigen_assert(m_storage.data()!=0 && "you cannot use operator= with a non initialized matrix (instead use set()");
+      return Base::operator=(other.derived());
+    }
+\endcode
+Here, Base is a typedef for MatrixBase\<Matrix\>. So, what is being called is the operator= of MatrixBase. Let's see its prototype in src/Core/MatrixBase.h:
+\code
+    template<typename OtherDerived>
+    Derived& operator=(const MatrixBase<OtherDerived>& other);
+\endcode
+Here, \a Derived is VectorXf (since u is a VectorXf) and \a OtherDerived is CwiseBinaryOp. More specifically, as explained in the previous section, \a OtherDerived is:
+\code
+CwiseBinaryOp<internal::scalar_sum_op<float>, VectorXf, VectorXf>
+\endcode
+So the full prototype of the operator= being called is:
+\code
+VectorXf& MatrixBase<VectorXf>::operator=(const MatrixBase<CwiseBinaryOp<internal::scalar_sum_op<float>, VectorXf, VectorXf> > & other);
+\endcode
+This operator= literally reads "copying a sum of two VectorXf's into another VectorXf".
+
+Let's now look at the implementation of this operator=. It resides in the file src/Core/Assign.h.
+
+What we can see there is:
+\code
+template<typename Derived>
+template<typename OtherDerived>
+inline Derived& MatrixBase<Derived>
+  ::operator=(const MatrixBase<OtherDerived>& other)
+{
+  return internal::assign_selector<Derived,OtherDerived>::run(derived(), other.derived());
+}
+\endcode
+
+OK so our next task is to understand internal::assign_selector :)
+
+Here is its declaration (all that is still in the same file src/Core/Assign.h)
+\code
+template<typename Derived, typename OtherDerived,
+         bool EvalBeforeAssigning = int(OtherDerived::Flags) & EvalBeforeAssigningBit,
+         bool NeedToTranspose = Derived::IsVectorAtCompileTime
+                && OtherDerived::IsVectorAtCompileTime
+                && int(Derived::RowsAtCompileTime) == int(OtherDerived::ColsAtCompileTime)
+                && int(Derived::ColsAtCompileTime) == int(OtherDerived::RowsAtCompileTime)
+                && int(Derived::SizeAtCompileTime) != 1>
+struct internal::assign_selector;
+\endcode
+
+So internal::assign_selector takes 4 template parameters, but the 2 last ones are automatically determined by the 2 first ones.
+
+EvalBeforeAssigning is here to enforce the EvalBeforeAssigningBit. As explained <a href="TopicLazyEvaluation.html">here</a>, certain expressions have this flag which makes them automatically evaluate into temporaries before assigning them to another expression. This is the case of the Product expression, in order to avoid strange aliasing effects when doing "m = m * m;" However, of course here our CwiseBinaryOp expression doesn't have the EvalBeforeAssigningBit: we said since the beginning that we didn't want a temporary to be introduced here. So if you go to src/Core/CwiseBinaryOp.h, you'll see that the Flags in internal::traits\<CwiseBinaryOp\> don't include the EvalBeforeAssigningBit. The Flags member of CwiseBinaryOp is then imported from the internal::traits by the EIGEN_GENERIC_PUBLIC_INTERFACE macro. Anyway, here the template parameter EvalBeforeAssigning has the value \c false.
+
+NeedToTranspose is here for the case where the user wants to copy a row-vector into a column-vector. We allow this as a special exception to the general rule that in assignments we require the dimesions to match. Anyway, here both the left-hand and right-hand sides are column vectors, in the sense that ColsAtCompileTime is equal to 1. So NeedToTranspose is \c false too.
+
+So, here we are in the partial specialization:
+\code
+internal::assign_selector<Derived, OtherDerived, false, false>
+\endcode
+
+Here's how it is defined:
+\code
+template<typename Derived, typename OtherDerived>
+struct internal::assign_selector<Derived,OtherDerived,false,false> {
+  static Derived& run(Derived& dst, const OtherDerived& other) { return dst.lazyAssign(other.derived()); }
+};
+\endcode
+
+OK so now our next job is to understand how lazyAssign works :)
+
+\code
+template<typename Derived>
+template<typename OtherDerived>
+inline Derived& MatrixBase<Derived>
+  ::lazyAssign(const MatrixBase<OtherDerived>& other)
+{
+  EIGEN_STATIC_ASSERT_SAME_MATRIX_SIZE(Derived,OtherDerived)
+  eigen_assert(rows() == other.rows() && cols() == other.cols());
+  internal::assign_impl<Derived, OtherDerived>::run(derived(),other.derived());
+  return derived();
+}
+\endcode
+
+What do we see here? Some assertions, and then the only interesting line is:
+\code
+  internal::assign_impl<Derived, OtherDerived>::run(derived(),other.derived());
+\endcode
+
+OK so now we want to know what is inside internal::assign_impl.
+
+Here is its declaration:
+\code
+template<typename Derived1, typename Derived2,
+         int Vectorization = internal::assign_traits<Derived1, Derived2>::Vectorization,
+         int Unrolling = internal::assign_traits<Derived1, Derived2>::Unrolling>
+struct internal::assign_impl;
+\endcode
+Again, internal::assign_selector takes 4 template parameters, but the 2 last ones are automatically determined by the 2 first ones.
+
+These two parameters \a Vectorization and \a Unrolling are determined by a helper class internal::assign_traits. Its job is to determine which vectorization strategy to use (that is \a Vectorization) and which unrolling strategy to use (that is \a Unrolling).
+
+We'll not enter into the details of how these strategies are chosen (this is in the implementation of internal::assign_traits at the top of the same file). Let's just say that here \a Vectorization has the value \a LinearVectorization, and \a Unrolling has the value \a NoUnrolling (the latter is obvious since our vectors have dynamic size so there's no way to unroll the loop at compile-time).
+
+So the partial
