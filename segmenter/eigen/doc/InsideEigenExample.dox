@@ -323,4 +323,173 @@ These two parameters \a Vectorization and \a Unrolling are determined by a helpe
 
 We'll not enter into the details of how these strategies are chosen (this is in the implementation of internal::assign_traits at the top of the same file). Let's just say that here \a Vectorization has the value \a LinearVectorization, and \a Unrolling has the value \a NoUnrolling (the latter is obvious since our vectors have dynamic size so there's no way to unroll the loop at compile-time).
 
-So the partial
+So the partial specialization of internal::assign_impl that we're looking at is:
+\code
+internal::assign_impl<Derived1, Derived2, LinearVectorization, NoUnrolling>
+\endcode
+
+Here is how it's defined:
+\code
+template<typename Derived1, typename Derived2>
+struct internal::assign_impl<Derived1, Derived2, LinearVectorization, NoUnrolling>
+{
+  static void run(Derived1 &dst, const Derived2 &src)
+  {
+    const int size = dst.size();
+    const int packetSize = internal::packet_traits<typename Derived1::Scalar>::size;
+    const int alignedStart = internal::assign_traits<Derived1,Derived2>::DstIsAligned ? 0
+                           : internal::first_aligned(&dst.coeffRef(0), size);
+    const int alignedEnd = alignedStart + ((size-alignedStart)/packetSize)*packetSize;
+
+    for(int index = 0; index < alignedStart; index++)
+      dst.copyCoeff(index, src);
+
+    for(int index = alignedStart; index < alignedEnd; index += packetSize)
+    {
+      dst.template copyPacket<Derived2, Aligned, internal::assign_traits<Derived1,Derived2>::SrcAlignment>(index, src);
+    }
+
+    for(int index = alignedEnd; index < size; index++)
+      dst.copyCoeff(index, src);
+  }
+};
+\endcode
+
+Here's how it works. \a LinearVectorization means that the left-hand and right-hand side expression can be accessed linearly i.e. you can refer to their coefficients by one integer \a index, as opposed to having to refer to its coefficients by two integers \a row, \a column.
+
+As we said at the beginning, vectorization works with blocks of 4 floats. Here, \a PacketSize is 4.
+
+There are two potential problems that we need to deal with:
+\li first, vectorization works much better if the packets are 128-bit-aligned. This is especially important for write access. So when writing to the coefficients of \a dst, we want to group these coefficients by packets of 4 such that each of these packets is 128-bit-aligned. In general, this requires to skip a few coefficients at the beginning of \a dst. This is the purpose of \a alignedStart. We then copy these first few coefficients one by one, not by packets. However, in our case, the \a dst expression is a VectorXf and remember that in the construction of the vectors we allocated aligned arrays. Thanks to \a DstIsAligned, Eigen remembers that without having to do any runtime check, so \a alignedStart is zero and this part is avoided altogether.
+\li second, the number of coefficients to copy is not in general a multiple of \a packetSize. Here, there are 50 coefficients to copy and \a packetSize is 4. So we'll have to copy the last 2 coefficients one by one, not by packets. Here, \a alignedEnd is 48.
+
+Now come the actual loops.
+
+First, the vectorized part: the 48 first coefficients out of 50 will be copied by packets of 4:
+\code
+  for(int index = alignedStart; index < alignedEnd; index += packetSize)
+  {
+    dst.template copyPacket<Derived2, Aligned, internal::assign_traits<Derived1,Derived2>::SrcAlignment>(index, src);
+  }
+\endcode
+
+What is copyPacket? It is defined in src/Core/Coeffs.h:
+\code
+template<typename Derived>
+template<typename OtherDerived, int StoreMode, int LoadMode>
+inline void MatrixBase<Derived>::copyPacket(int index, const MatrixBase<OtherDerived>& other)
+{
+  eigen_internal_assert(index >= 0 && index < size());
+  derived().template writePacket<StoreMode>(index,
+    other.derived().template packet<LoadMode>(index));
+}
+\endcode
+
+OK, what are writePacket() and packet() here?
+
+First, writePacket() here is a method on the left-hand side VectorXf. So we go to src/Core/Matrix.h to look at its definition:
+\code
+template<int StoreMode>
+inline void writePacket(int index, const PacketScalar& x)
+{
+  internal::pstoret<Scalar, PacketScalar, StoreMode>(m_storage.data() + index, x);
+}
+\endcode
+Here, \a StoreMode is \a #Aligned, indicating that we are doing a 128-bit-aligned write access, \a PacketScalar is a type representing a "SSE packet of 4 floats" and internal::pstoret is a function writing such a packet in memory. Their definitions are architecture-specific, we find them in src/Core/arch/SSE/PacketMath.h:
+
+The line in src/Core/arch/SSE/PacketMath.h that determines the PacketScalar type (via a typedef in Matrix.h) is:
+\code
+template<> struct internal::packet_traits<float>  { typedef __m128  type; enum {size=4}; };
+\endcode
+Here, __m128 is a SSE-specific type. Notice that the enum \a size here is what was used to define \a packetSize above.
+
+And here is the implementation of internal::pstoret:
+\code
+template<> inline void internal::pstore(float*  to, const __m128&  from) { _mm_store_ps(to, from); }
+\endcode
+Here, __mm_store_ps is a SSE-specific intrinsic function, representing a single SSE instruction. The difference between internal::pstore and internal::pstoret is that internal::pstoret is a dispatcher handling both the aligned and unaligned cases, you find its definition in src/Core/GenericPacketMath.h:
+\code
+template<typename Scalar, typename Packet, int LoadMode>
+inline void internal::pstoret(Scalar* to, const Packet& from)
+{
+  if(LoadMode == Aligned)
+    internal::pstore(to, from);
+  else
+    internal::pstoreu(to, from);
+}
+\endcode
+
+OK, that explains how writePacket() works. Now let's look into the packet() call. Remember that we are analyzing this line of code inside copyPacket():
+\code
+derived().template writePacket<StoreMode>(index,
+    other.derived().template packet<LoadMode>(index));
+\endcode
+
+Here, \a other is our sum expression \a v + \a w. The .derived() is just casting from MatrixBase to the subclass which here is CwiseBinaryOp. So let's go to src/Core/CwiseBinaryOp.h:
+\code
+class CwiseBinaryOp
+{
+  // ...
+    template<int LoadMode>
+    inline PacketScalar packet(int index) const
+    {
+      return m_functor.packetOp(m_lhs.template packet<LoadMode>(index), m_rhs.template packet<LoadMode>(index));
+    }
+};
+\endcode
+Here, \a m_lhs is the vector \a v, and \a m_rhs is the vector \a w. So the packet() function here is Matrix::packet(). The template parameter \a LoadMode is \a #Aligned. So we're looking at
+\code
+class Matrix
+{
+  // ...
+    template<int LoadMode>
+    inline PacketScalar packet(int index) const
+    {
+      return internal::ploadt<Scalar, LoadMode>(m_storage.data() + index);
+    }
+};
+\endcode
+We let you look up the definition of internal::ploadt in GenericPacketMath.h and the internal::pload in src/Core/arch/SSE/PacketMath.h. It is very similar to the above for internal::pstore.
+
+Let's go back to CwiseBinaryOp::packet(). Once the packets from the vectors \a v and \a w have been returned, what does this function do? It calls m_functor.packetOp() on them. What is m_functor? Here we must remember what particular template specialization of CwiseBinaryOp we're dealing with:
+\code
+CwiseBinaryOp<internal::scalar_sum_op<float>, VectorXf, VectorXf>
+\endcode
+So m_functor is an object of the empty class internal::scalar_sum_op<float>. As we mentioned above, don't worry about why we constructed an object of this empty class at all -- it's an implementation detail, the point is that some other functors need to store member data.
+
+Anyway, internal::scalar_sum_op is defined in src/Core/Functors.h:
+\code
+template<typename Scalar> struct internal::scalar_sum_op EIGEN_EMPTY_STRUCT {
+  inline const Scalar operator() (const Scalar& a, const Scalar& b) const { return a + b; }
+  template<typename PacketScalar>
+  inline const PacketScalar packetOp(const PacketScalar& a, const PacketScalar& b) const
+  { return internal::padd(a,b); }
+};
+\endcode
+As you can see, all what packetOp() does is to call internal::padd on the two packets. Here is the definition of internal::padd from src/Core/arch/SSE/PacketMath.h:
+\code
+template<> inline __m128  internal::padd(const __m128&  a, const __m128&  b) { return _mm_add_ps(a,b); }
+\endcode
+Here, _mm_add_ps is a SSE-specific intrinsic function, representing a single SSE instruction.
+
+To summarize, the loop
+\code
+  for(int index = alignedStart; index < alignedEnd; index += packetSize)
+  {
+    dst.template copyPacket<Derived2, Aligned, internal::assign_traits<Derived1,Derived2>::SrcAlignment>(index, src);
+  }
+\endcode
+has been compiled to the following code: for \a index going from 0 to the 11 ( = 48/4 - 1), read the i-th packet (of 4 floats) from the vector v and the i-th packet from the vector w using two __mm_load_ps SSE instructions, then add them together using a __mm_add_ps instruction, then store the result using a __mm_store_ps instruction.
+
+There remains the second loop handling the last few (here, the last 2) coefficients:
+\code
+  for(int index = alignedEnd; index < size; index++)
+    dst.copyCoeff(index, src);
+\endcode
+However, it works just like the one we just explained, it is just simpler because there is no SSE vectorization involved here. copyPacket() becomes copyCoeff(), packet() becomes coeff(), writePacket() becomes coeffRef(). If you followed us this far, you can probably understand this part by yourself.
+
+We see that all the C++ abstraction of Eigen goes away during compilation and that we indeed are precisely controlling which assembly instructions we emit. Such is the beauty of C++! Since we have such precise control over the emitted assembly instructions, but such complex logic to choose the right instructions, we can say that Eigen really behaves like an optimizing compiler. If you prefer, you could say that Eigen behaves like a script for the compiler. In a sense, C++ template metaprogramming is scripting the compiler -- and it's been shown that this scripting language is Turing-complete. See <a href="http://en.wikipedia.org/wiki/Template_metaprogramming"> Wikipedia</a>.
+
+*/
+
+}
