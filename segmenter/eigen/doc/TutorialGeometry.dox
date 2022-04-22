@@ -1,0 +1,10 @@
+namespace Eigen {
+
+/** \eigenManualPage TutorialGeometry Space transformations
+
+In this page, we will introduce the many possibilities offered by the \ref Geometry_Module "geometry module" to deal with 2D and 3D rotations and projective or affine transformations.
+
+\eigenAutoToc
+
+Eigen's Geometry module provides two different kinds of geometric transformations:
+  - Abstract transformations, such as rotations (represented by \ref AngleAxis "angle and axis" or by a \ref Quaternion "quaternion"), \ref Translation "translations", \ref Scaling "scalings". These transformations are NOT 
