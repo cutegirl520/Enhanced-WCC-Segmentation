@@ -38,4 +38,49 @@ Map<typename MatrixType,
     typename StrideType>
 \endcode
 \li \c MapOptions specifies whether the pointer is \c #Aligned, or \c #Unaligned.  The default is \c #Unaligned.
-\li \c StrideTyp
+\li \c StrideType allows you to specify a custom layout for the memory array, using the Stride class.  One example would be to specify that the data array is organized in row-major format:
+<table class="example">
+<tr><th>Example:</th><th>Output:</th></tr>
+<tr>
+<td>\include Tutorial_Map_rowmajor.cpp </td>
+<td>\verbinclude Tutorial_Map_rowmajor.out </td>
+</table>
+However, Stride is even more flexible than this; for details, see the documentation for the Map and Stride classes.
+
+\section TutorialMapUsing Using Map variables
+
+You can use a Map object just like any other %Eigen type:
+<table class="example">
+<tr><th>Example:</th><th>Output:</th></tr>
+<tr>
+<td>\include Tutorial_Map_using.cpp </td>
+<td>\verbinclude Tutorial_Map_using.out </td>
+</table>
+
+All %Eigen functions are written to accept Map objects just like other %Eigen types. However, when writing your own functions taking %Eigen types, this does \em not happen automatically: a Map type is not identical to its Dense equivalent.  See \ref TopicFunctionTakingEigenTypes for details.
+
+\section TutorialMapPlacementNew Changing the mapped array
+
+It is possible to change the array of a Map object after declaration, using the C++ "placement new" syntax:
+<table class="example">
+<tr><th>Example:</th><th>Output:</th></tr>
+<tr>
+<td>\include Map_placement_new.cpp </td>
+<td>\verbinclude Map_placement_new.out </td>
+</table>
+Despite appearances, this does not invoke the memory allocator, because the syntax specifies the location for storing the result.
+
+This syntax makes it possible to declare a Map object without first knowing the mapped array's location in memory:
+\code
+Map<Matrix3f> A(NULL);  // don't try to use this matrix yet!
+VectorXf b(n_matrices);
+for (int i = 0; i < n_matrices; i++)
+{
+  new (&A) Map<Matrix3f>(get_matrix_pointer(i));
+  b(i) = A.trace();
+}
+\endcode
+
+*/
+
+}
