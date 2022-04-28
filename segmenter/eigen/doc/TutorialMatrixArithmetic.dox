@@ -207,4 +207,8 @@ Eigen then uses runtime assertions. This means that the program will abort with 
   v = m * v; // Run-time assertion failure here: "invalid matrix product"
 \endcode
 
-For m
+For more details on this topic, see \ref TopicAssertions "this page".
+
+*/
+
+}
