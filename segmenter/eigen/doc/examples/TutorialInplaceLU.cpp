@@ -50,4 +50,12 @@ cout << "[recompute_bis0]" << endl;
   MatrixXd A1(2,2);
   A1 << 5,-2,3,4;
   lu.compute(A1);
-  cout << "Here is the inp
+  cout << "Here is the input matrix A1 after decomposition:\n" << A1 << endl;
+cout << "[recompute_bis0]" << endl;
+
+cout << "[recompute_bis1]" << endl;
+  x = lu.solve(b);
+  cout << "Residual: " << (A1 * x - b).norm() << endl;
+cout << "[recompute_bis1]" << endl;
+
+}
