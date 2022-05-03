@@ -12,4 +12,7 @@ template<typename Scalar> struct MakeComplexOp {
 
 int main(int, char**)
 {
-  Matrix4d 
+  Matrix4d m1 = Matrix4d::Random(), m2 = Matrix4d::Random();
+  cout << m1.binaryExpr(m2, MakeComplexOp<double>()) << endl;
+  return 0;
+}
