@@ -10,7 +10,7 @@ using namespace Eigen;
 
 void foo(){
     MatrixXf m;
-    Diagonal<CV_QUALIFIER MatrixXf>(m).coeffRef(0) = 1.0f;
+    TriangularView<CV_QUALIFIER MatrixXf,Upper>(m).coeffRef(0, 0) = 1.0f;
 }
 
 int main() {}

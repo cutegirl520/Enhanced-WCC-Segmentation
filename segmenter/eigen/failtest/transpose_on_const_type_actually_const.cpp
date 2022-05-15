@@ -1,3 +1,4 @@
+
 #include "../Eigen/Core"
 
 #ifdef EIGEN_SHOULD_FAIL_TO_BUILD
@@ -10,7 +11,7 @@ using namespace Eigen;
 
 void foo(){
     MatrixXf m;
-    Diagonal<CV_QUALIFIER MatrixXf>(m).coeffRef(0) = 1.0f;
+    Transpose<CV_QUALIFIER MatrixXf>(m).coeffRef(0, 0) = 1.0f;
 }
 
 int main() {}

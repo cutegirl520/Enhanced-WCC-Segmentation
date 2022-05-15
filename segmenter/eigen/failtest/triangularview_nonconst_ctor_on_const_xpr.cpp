@@ -1,3 +1,4 @@
+
 #include "../Eigen/Core"
 
 #ifdef EIGEN_SHOULD_FAIL_TO_BUILD
@@ -8,9 +9,8 @@
 
 using namespace Eigen;
 
-void foo(){
-    MatrixXf m;
-    Diagonal<CV_QUALIFIER MatrixXf>(m).coeffRef(0) = 1.0f;
+void foo(CV_QUALIFIER Matrix3d &m){
+  TriangularView<Matrix3d,Upper> t(m);
 }
 
 int main() {}

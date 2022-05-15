@@ -1,3 +1,4 @@
+
 #include "../Eigen/Core"
 
 #ifdef EIGEN_SHOULD_FAIL_TO_BUILD
@@ -8,9 +9,11 @@
 
 using namespace Eigen;
 
-void foo(){
-    MatrixXf m;
-    Diagonal<CV_QUALIFIER MatrixXf>(m).coeffRef(0) = 1.0f;
-}
+void call_ref(Ref<VectorXf> a) { }
 
-int main() {}
+int main()
+{
+  VectorXf a(10);
+  CV_QUALIFIER VectorXf& ac(a);
+  call_ref(ac);
+}
