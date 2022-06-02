@@ -611,4 +611,152 @@
 *
 *              W := W * V1
 *
-               CALL DTRMM( 'Right', 'Upper', 'No t
+               CALL DTRMM( 'Right', 'Upper', 'No transpose', 'Unit',
+     $              LASTC, K, ONE, V, LDV, WORK, LDWORK )
+*
+*              C1 := C1 - W
+*
+               DO 180 J = 1, K
+                  DO 170 I = 1, LASTC
+                     C( I, J ) = C( I, J ) - WORK( I, J )
+  170             CONTINUE
+  180          CONTINUE
+*
+            END IF
+*
+         ELSE
+*
+*           Let  V =  ( V1  V2 )    (V2: last K columns)
+*           where  V2  is unit lower triangular.
+*
+            IF( LSAME( SIDE, 'L' ) ) THEN
+*
+*              Form  H * C  or  H**T * C  where  C = ( C1 )
+*                                                    ( C2 )
+*
+               LASTV = MAX( K, ILADLC( K, M, V, LDV ) )
+               LASTC = ILADLC( LASTV, N, C, LDC )
+*
+*              W := C**T * V**T  =  (C1**T * V1**T + C2**T * V2**T) (stored in WORK)
+*
+*              W := C2**T
+*
+               DO 190 J = 1, K
+                  CALL DCOPY( LASTC, C( LASTV-K+J, 1 ), LDC,
+     $                 WORK( 1, J ), 1 )
+  190          CONTINUE
+*
+*              W := W * V2**T
+*
+               CALL DTRMM( 'Right', 'Lower', 'Transpose', 'Unit',
+     $              LASTC, K, ONE, V( 1, LASTV-K+1 ), LDV,
+     $              WORK, LDWORK )
+               IF( LASTV.GT.K ) THEN
+*
+*                 W := W + C1**T * V1**T
+*
+                  CALL DGEMM( 'Transpose', 'Transpose',
+     $                 LASTC, K, LASTV-K, ONE, C, LDC, V, LDV,
+     $                 ONE, WORK, LDWORK )
+               END IF
+*
+*              W := W * T**T  or  W * T
+*
+               CALL DTRMM( 'Right', 'Lower', TRANST, 'Non-unit',
+     $              LASTC, K, ONE, T, LDT, WORK, LDWORK )
+*
+*              C := C - V**T * W**T
+*
+               IF( LASTV.GT.K ) THEN
+*
+*                 C1 := C1 - V1**T * W**T
+*
+                  CALL DGEMM( 'Transpose', 'Transpose',
+     $                 LASTV-K, LASTC, K, -ONE, V, LDV, WORK, LDWORK,
+     $                 ONE, C, LDC )
+               END IF
+*
+*              W := W * V2
+*
+               CALL DTRMM( 'Right', 'Lower', 'No transpose', 'Unit',
+     $              LASTC, K, ONE, V( 1, LASTV-K+1 ), LDV,
+     $              WORK, LDWORK )
+*
+*              C2 := C2 - W**T
+*
+               DO 210 J = 1, K
+                  DO 200 I = 1, LASTC
+                     C( LASTV-K+J, I ) = C( LASTV-K+J, I ) - WORK(I, J)
+  200             CONTINUE
+  210          CONTINUE
+*
+            ELSE IF( LSAME( SIDE, 'R' ) ) THEN
+*
+*              Form  C * H  or  C * H**T  where  C = ( C1  C2 )
+*
+               LASTV = MAX( K, ILADLC( K, N, V, LDV ) )
+               LASTC = ILADLR( M, LASTV, C, LDC )
+*
+*              W := C * V**T  =  (C1*V1**T + C2*V2**T)  (stored in WORK)
+*
+*              W := C2
+*
+               DO 220 J = 1, K
+                  CALL DCOPY( LASTC, C( 1, LASTV-K+J ), 1,
+     $                 WORK( 1, J ), 1 )
+  220          CONTINUE
+*
+*              W := W * V2**T
+*
+               CALL DTRMM( 'Right', 'Lower', 'Transpose', 'Unit',
+     $              LASTC, K, ONE, V( 1, LASTV-K+1 ), LDV,
+     $              WORK, LDWORK )
+               IF( LASTV.GT.K ) THEN
+*
+*                 W := W + C1 * V1**T
+*
+                  CALL DGEMM( 'No transpose', 'Transpose',
+     $                 LASTC, K, LASTV-K, ONE, C, LDC, V, LDV,
+     $                 ONE, WORK, LDWORK )
+               END IF
+*
+*              W := W * T  or  W * T**T
+*
+               CALL DTRMM( 'Right', 'Lower', TRANS, 'Non-unit',
+     $              LASTC, K, ONE, T, LDT, WORK, LDWORK )
+*
+*              C := C - W * V
+*
+               IF( LASTV.GT.K ) THEN
+*
+*                 C1 := C1 - W * V1
+*
+                  CALL DGEMM( 'No transpose', 'No transpose',
+     $                 LASTC, LASTV-K, K, -ONE, WORK, LDWORK, V, LDV,
+     $                 ONE, C, LDC )
+               END IF
+*
+*              W := W * V2
+*
+               CALL DTRMM( 'Right', 'Lower', 'No transpose', 'Unit',
+     $              LASTC, K, ONE, V( 1, LASTV-K+1 ), LDV,
+     $              WORK, LDWORK )
+*
+*              C1 := C1 - W
+*
+               DO 240 J = 1, K
+                  DO 230 I = 1, LASTC
+                     C( I, LASTV-K+J ) = C( I, LASTV-K+J ) - WORK(I, J)
+  230             CONTINUE
+  240          CONTINUE
+*
+            END IF
+*
+         END IF
+      END IF
+*
+      RETURN
+*
+*     End of DLARFB
+*
+      END
