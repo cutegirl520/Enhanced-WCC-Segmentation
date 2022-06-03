@@ -1,5 +1,5 @@
 
-*> \brief \b ILACLC
+*> \brief \b ILADLR
 *
 *  =========== DOCUMENTATION ===========
 *
@@ -7,25 +7,25 @@
 *            http://www.netlib.org/lapack/explore-html/ 
 *
 *> \htmlonly
-*> Download ILACLC + dependencies 
-*> <a href="http://www.netlib.org/cgi-bin/netlibfiles.tgz?format=tgz&filename=/lapack/lapack_routine/ilaclc.f"> 
+*> Download ILADLR + dependencies 
+*> <a href="http://www.netlib.org/cgi-bin/netlibfiles.tgz?format=tgz&filename=/lapack/lapack_routine/iladlr.f"> 
 *> [TGZ]</a> 
-*> <a href="http://www.netlib.org/cgi-bin/netlibfiles.zip?format=zip&filename=/lapack/lapack_routine/ilaclc.f"> 
+*> <a href="http://www.netlib.org/cgi-bin/netlibfiles.zip?format=zip&filename=/lapack/lapack_routine/iladlr.f"> 
 *> [ZIP]</a> 
-*> <a href="http://www.netlib.org/cgi-bin/netlibfiles.txt?format=txt&filename=/lapack/lapack_routine/ilaclc.f"> 
+*> <a href="http://www.netlib.org/cgi-bin/netlibfiles.txt?format=txt&filename=/lapack/lapack_routine/iladlr.f"> 
 *> [TXT]</a>
 *> \endhtmlonly 
 *
 *  Definition:
 *  ===========
 *
-*       INTEGER FUNCTION ILACLC( M, N, A, LDA )
+*       INTEGER FUNCTION ILADLR( M, N, A, LDA )
 * 
 *       .. Scalar Arguments ..
 *       INTEGER            M, N, LDA
 *       ..
 *       .. Array Arguments ..
-*       COMPLEX            A( LDA, * )
+*       DOUBLE PRECISION   A( LDA, * )
 *       ..
 *  
 *
@@ -34,7 +34,7 @@
 *>
 *> \verbatim
 *>
-*> ILACLC scans A for its last non-zero column.
+*> ILADLR scans A for its last non-zero row.
 *> \endverbatim
 *
 *  Arguments:
@@ -54,7 +54,7 @@
 *>
 *> \param[in] A
 *> \verbatim
-*>          A is COMPLEX array, dimension (LDA,N)
+*>          A is DOUBLE PRECISION array, dimension (LDA,N)
 *>          The m by n matrix A.
 *> \endverbatim
 *>
@@ -72,47 +72,50 @@
 *> \author Univ. of Colorado Denver 
 *> \author NAG Ltd. 
 *
-*> \date November 2011
+*> \date April 2012
 *
-*> \ingroup complexOTHERauxiliary
+*> \ingroup auxOTHERauxiliary
 *
 *  =====================================================================
-      INTEGER FUNCTION ILACLC( M, N, A, LDA )
+      INTEGER FUNCTION ILADLR( M, N, A, LDA )
 *
-*  -- LAPACK auxiliary routine (version 3.4.0) --
+*  -- LAPACK auxiliary routine (version 3.4.1) --
 *  -- LAPACK is a software package provided by Univ. of Tennessee,    --
 *  -- Univ. of California Berkeley, Univ. of Colorado Denver and NAG Ltd..--
-*     November 2011
+*     April 2012
 *
 *     .. Scalar Arguments ..
       INTEGER            M, N, LDA
 *     ..
 *     .. Array Arguments ..
-      COMPLEX            A( LDA, * )
+      DOUBLE PRECISION   A( LDA, * )
 *     ..
 *
 *  =====================================================================
 *
 *     .. Parameters ..
-      COMPLEX          ZERO
-      PARAMETER ( ZERO = (0.0E+0, 0.0E+0) )
+      DOUBLE PRECISION ZERO
+      PARAMETER ( ZERO = 0.0D+0 )
 *     ..
 *     .. Local Scalars ..
-      INTEGER I
+      INTEGER I, J
 *     ..
 *     .. Executable Statements ..
 *
 *     Quick test for the common case where one corner is non-zero.
-      IF( N.EQ.0 ) THEN
-         ILACLC = N
-      ELSE IF( A(1, N).NE.ZERO .OR. A(M, N).NE.ZERO ) THEN
-         ILACLC = N
+      IF( M.EQ.0 ) THEN
+         ILADLR = M
+      ELSE IF( A(M, 1).NE.ZERO .OR. A(M, N).NE.ZERO ) THEN
+         ILADLR = M
       ELSE
-*     Now scan each column from the end, returning with the first non-zero.
-         DO ILACLC = N, 1, -1
-            DO I = 1, M
-               IF( A(I, ILACLC).NE.ZERO ) RETURN
-            END DO
+*     Scan up each column tracking the last zero row seen.
+         ILADLR = 0
+         DO J = 1, N
+            I=M
+            DO WHILE((A(MAX(I,1),J).EQ.ZERO).AND.(I.GE.1))
+               I=I-1
+            ENDDO
+            ILADLR = MAX( ILADLR, I )
          END DO
       END IF
       RETURN
