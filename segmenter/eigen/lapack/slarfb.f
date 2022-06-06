@@ -713,4 +713,51 @@
      $              WORK, LDWORK )
                IF( LASTV.GT.K ) THEN
 *
-*                 W :
+*                 W := W + C1 * V1**T
+*
+                  CALL SGEMM( 'No transpose', 'Transpose',
+     $                 LASTC, K, LASTV-K, ONE, C, LDC, V, LDV,
+     $                 ONE, WORK, LDWORK )
+               END IF
+*
+*              W := W * T  or  W * T**T
+*
+               CALL STRMM( 'Right', 'Lower', TRANS, 'Non-unit',
+     $              LASTC, K, ONE, T, LDT, WORK, LDWORK )
+*
+*              C := C - W * V
+*
+               IF( LASTV.GT.K ) THEN
+*
+*                 C1 := C1 - W * V1
+*
+                  CALL SGEMM( 'No transpose', 'No transpose',
+     $                 LASTC, LASTV-K, K, -ONE, WORK, LDWORK, V, LDV,
+     $                 ONE, C, LDC )
+               END IF
+*
+*              W := W * V2
+*
+               CALL STRMM( 'Right', 'Lower', 'No transpose', 'Unit',
+     $              LASTC, K, ONE, V( 1, LASTV-K+1 ), LDV,
+     $              WORK, LDWORK )
+*
+*              C1 := C1 - W
+*
+               DO 240 J = 1, K
+                  DO 230 I = 1, LASTC
+                     C( I, LASTV-K+J ) = C( I, LASTV-K+J )
+     $                    - WORK( I, J )
+  230             CONTINUE
+  240          CONTINUE
+*
+            END IF
+*
+         END IF
+      END IF
+*
+      RETURN
+*
+*     End of SLARFB
+*
+      END
