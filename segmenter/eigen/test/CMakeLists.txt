@@ -346,4 +346,24 @@ if(CUDA_FOUND)
     set(CUDA_NVCC_FLAGS "-ccbin /usr/bin/clang" CACHE STRING "nvcc flags" FORCE)
   endif()
   if(EIGEN_TEST_CUDA_CLANG)
-   set(
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 --cuda-gpu-arch=sm_30")
+  endif()
+  cuda_include_directories(${CMAKE_CURRENT_BINARY_DIR})
+  set(EIGEN_ADD_TEST_FILENAME_EXTENSION  "cu")
+  
+  ei_add_test(cuda_basic)
+  
+  unset(EIGEN_ADD_TEST_FILENAME_EXTENSION)
+
+endif(CUDA_FOUND)
+
+endif(EIGEN_TEST_CUDA)
+
+
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/failtests)    
+add_test(NAME failtests WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/failtests COMMAND ${CMAKE_COMMAND} ${Eigen_SOURCE_DIR} -G "${CMAKE_GENERATOR}" -DEIGEN_FAILTEST=ON)
+
+option(EIGEN_TEST_BUILD_DOCUMENTATION "Test building the doxygen documentation" OFF)
+IF(EIGEN_TEST_BUILD_DOCUMENTATION)
+  add_dependencies(buildtests doc)
+ENDIF()
