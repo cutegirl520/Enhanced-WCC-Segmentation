@@ -248,4 +248,33 @@ void fixedSizeMatrixConstruction()
     VERIFY(a1(0) == raw[0]);
     VERIFY(m2(0) == DenseIndex(raw[0]));
     VERIFY(a2(0) == DenseIndex(raw[0]));
-    VERIFY(m3(0) == int(raw[0]))
+    VERIFY(m3(0) == int(raw[0]));
+    VERIFY_IS_EQUAL(m,(Matrix<Scalar,1,1>(raw[0])));
+    VERIFY((a==Array<Scalar,1,1>(raw[0])).all());
+  }
+}
+
+void test_basicstuff()
+{
+  for(int i = 0; i < g_repeat; i++) {
+    CALL_SUBTEST_1( basicStuff(Matrix<float, 1, 1>()) );
+    CALL_SUBTEST_2( basicStuff(Matrix4d()) );
+    CALL_SUBTEST_3( basicStuff(MatrixXcf(internal::random<int>(1,EIGEN_TEST_MAX_SIZE), internal::random<int>(1,EIGEN_TEST_MAX_SIZE))) );
+    CALL_SUBTEST_4( basicStuff(MatrixXi(internal::random<int>(1,EIGEN_TEST_MAX_SIZE), internal::random<int>(1,EIGEN_TEST_MAX_SIZE))) );
+    CALL_SUBTEST_5( basicStuff(MatrixXcd(internal::random<int>(1,EIGEN_TEST_MAX_SIZE), internal::random<int>(1,EIGEN_TEST_MAX_SIZE))) );
+    CALL_SUBTEST_6( basicStuff(Matrix<float, 100, 100>()) );
+    CALL_SUBTEST_7( basicStuff(Matrix<long double,Dynamic,Dynamic>(internal::random<int>(1,EIGEN_TEST_MAX_SIZE),internal::random<int>(1,EIGEN_TEST_MAX_SIZE))) );
+
+    CALL_SUBTEST_3( basicStuffComplex(MatrixXcf(internal::random<int>(1,EIGEN_TEST_MAX_SIZE), internal::random<int>(1,EIGEN_TEST_MAX_SIZE))) );
+    CALL_SUBTEST_5( basicStuffComplex(MatrixXcd(internal::random<int>(1,EIGEN_TEST_MAX_SIZE), internal::random<int>(1,EIGEN_TEST_MAX_SIZE))) );
+  }
+
+  CALL_SUBTEST_1(fixedSizeMatrixConstruction<unsigned char>());
+  CALL_SUBTEST_1(fixedSizeMatrixConstruction<float>());
+  CALL_SUBTEST_1(fixedSizeMatrixConstruction<double>());
+  CALL_SUBTEST_1(fixedSizeMatrixConstruction<int>());
+  CALL_SUBTEST_1(fixedSizeMatrixConstruction<long int>());
+  CALL_SUBTEST_1(fixedSizeMatrixConstruction<std::ptrdiff_t>());
+
+  CALL_SUBTEST_2(casting());
+}
