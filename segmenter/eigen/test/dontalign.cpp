@@ -53,4 +53,11 @@ void test_dontalign()
 #elif defined EIGEN_TEST_PART_2 || defined EIGEN_TEST_PART_6
   dontalign(Matrix3cd());
   dontalign(Matrix4cf());
-#elif defined EIGEN_TEST_PART_3 || defined EI
+#elif defined EIGEN_TEST_PART_3 || defined EIGEN_TEST_PART_7
+  dontalign(Matrix<float, 32, 32>());
+  dontalign(Matrix<std::complex<float>, 32, 32>());
+#elif defined EIGEN_TEST_PART_4 || defined EIGEN_TEST_PART_8
+  dontalign(MatrixXd(32, 32));
+  dontalign(MatrixXcf(32, 32));
+#endif
+}
