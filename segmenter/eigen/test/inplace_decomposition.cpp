@@ -93,4 +93,18 @@ void test_inplace_decomposition()
     CALL_SUBTEST_3(( inplace<PartialPivLU<Ref<Matrix4d> >, Matrix4d>(true,false) ));
 
     CALL_SUBTEST_4(( inplace<FullPivLU<Ref<MatrixXd> >, MatrixXd>(true,false) ));
-    CALL_SUBTES
+    CALL_SUBTEST_4(( inplace<FullPivLU<Ref<Matrix4d> >, Matrix4d>(true,false) ));
+
+    CALL_SUBTEST_5(( inplace<HouseholderQR<Ref<MatrixXd> >, MatrixXd>(false,false) ));
+    CALL_SUBTEST_5(( inplace<HouseholderQR<Ref<Matrix43d> >, Matrix43d>(false,false) ));
+
+    CALL_SUBTEST_6(( inplace<ColPivHouseholderQR<Ref<MatrixXd> >, MatrixXd>(false,false) ));
+    CALL_SUBTEST_6(( inplace<ColPivHouseholderQR<Ref<Matrix43d> >, Matrix43d>(false,false) ));
+
+    CALL_SUBTEST_7(( inplace<FullPivHouseholderQR<Ref<MatrixXd> >, MatrixXd>(false,false) ));
+    CALL_SUBTEST_7(( inplace<FullPivHouseholderQR<Ref<Matrix43d> >, Matrix43d>(false,false) ));
+
+    CALL_SUBTEST_8(( inplace<CompleteOrthogonalDecomposition<Ref<MatrixXd> >, MatrixXd>(false,false) ));
+    CALL_SUBTEST_8(( inplace<CompleteOrthogonalDecomposition<Ref<Matrix43d> >, Matrix43d>(false,false) ));
+  }
+}
