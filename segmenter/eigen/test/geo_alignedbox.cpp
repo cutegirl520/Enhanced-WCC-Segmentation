@@ -185,4 +185,5 @@ void test_geo_alignedbox()
     CALL_SUBTEST_14( alignedbox(AlignedBox<double,Dynamic>(4)) );
   }
   CALL_SUBTEST_12( specificTest1() );
-  CALL_
+  CALL_SUBTEST_13( specificTest2() );
+}
