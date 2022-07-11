@@ -249,4 +249,270 @@ namespace Eigen
 
   #define VERIFY_RAISES_ASSERT(a) {}
 
-#e
+#endif // EIGEN_NO_ASSERTION_CHECKING
+
+
+#define EIGEN_INTERNAL_DEBUGGING
+#include <Eigen/QR> // required for createRandomPIMatrixOfRank
+
+inline void verify_impl(bool condition, const char *testname, const char *file, int line, const char *condition_as_string)
+{
+  if (!condition)
+  {
+    if(Eigen::g_test_level>0)
+      std::cerr << "WARNING: ";
+    std::cerr << "Test " << testname << " failed in " << file << " (" << line << ")"
+      << std::endl << "    " << condition_as_string << std::endl;
+    std::cerr << "Stack:\n";
+    const int test_stack_size = static_cast<int>(Eigen::g_test_stack.size());
+    for(int i=test_stack_size-1; i>=0; --i)
+      std::cerr << "  - " << Eigen::g_test_stack[i] << "\n";
+    std::cerr << "\n";
+    if(Eigen::g_test_level==0)
+      abort();
+  }
+}
+
+#define VERIFY(a) ::verify_impl(a, g_test_stack.back().c_str(), __FILE__, __LINE__, EI_PP_MAKE_STRING(a))
+
+#define VERIFY_GE(a, b) ::verify_impl(a >= b, g_test_stack.back().c_str(), __FILE__, __LINE__, EI_PP_MAKE_STRING(a >= b))
+#define VERIFY_LE(a, b) ::verify_impl(a <= b, g_test_stack.back().c_str(), __FILE__, __LINE__, EI_PP_MAKE_STRING(a <= b))
+
+
+#define VERIFY_IS_EQUAL(a, b) VERIFY(test_is_equal(a, b, true))
+#define VERIFY_IS_NOT_EQUAL(a, b) VERIFY(test_is_equal(a, b, false))
+#define VERIFY_IS_APPROX(a, b) VERIFY(verifyIsApprox(a, b))
+#define VERIFY_IS_NOT_APPROX(a, b) VERIFY(!test_isApprox(a, b))
+#define VERIFY_IS_MUCH_SMALLER_THAN(a, b) VERIFY(test_isMuchSmallerThan(a, b))
+#define VERIFY_IS_NOT_MUCH_SMALLER_THAN(a, b) VERIFY(!test_isMuchSmallerThan(a, b))
+#define VERIFY_IS_APPROX_OR_LESS_THAN(a, b) VERIFY(test_isApproxOrLessThan(a, b))
+#define VERIFY_IS_NOT_APPROX_OR_LESS_THAN(a, b) VERIFY(!test_isApproxOrLessThan(a, b))
+
+#define VERIFY_IS_UNITARY(a) VERIFY(test_isUnitary(a))
+
+#define CALL_SUBTEST(FUNC) do { \
+    g_test_stack.push_back(EI_PP_MAKE_STRING(FUNC)); \
+    FUNC; \
+    g_test_stack.pop_back(); \
+  } while (0)
+
+
+namespace Eigen {
+
+template<typename T> inline typename NumTraits<T>::Real test_precision() { return NumTraits<T>::dummy_precision(); }
+template<> inline float test_precision<float>() { return 1e-3f; }
+template<> inline double test_precision<double>() { return 1e-6; }
+template<> inline long double test_precision<long double>() { return 1e-6l; }
+template<> inline float test_precision<std::complex<float> >() { return test_precision<float>(); }
+template<> inline double test_precision<std::complex<double> >() { return test_precision<double>(); }
+template<> inline long double test_precision<std::complex<long double> >() { return test_precision<long double>(); }
+
+inline bool test_isApprox(const int& a, const int& b)
+{ return internal::isApprox(a, b, test_precision<int>()); }
+inline bool test_isMuchSmallerThan(const int& a, const int& b)
+{ return internal::isMuchSmallerThan(a, b, test_precision<int>()); }
+inline bool test_isApproxOrLessThan(const int& a, const int& b)
+{ return internal::isApproxOrLessThan(a, b, test_precision<int>()); }
+
+inline bool test_isApprox(const float& a, const float& b)
+{ return internal::isApprox(a, b, test_precision<float>()); }
+inline bool test_isMuchSmallerThan(const float& a, const float& b)
+{ return internal::isMuchSmallerThan(a, b, test_precision<float>()); }
+inline bool test_isApproxOrLessThan(const float& a, const float& b)
+{ return internal::isApproxOrLessThan(a, b, test_precision<float>()); }
+
+inline bool test_isApprox(const double& a, const double& b)
+{ return internal::isApprox(a, b, test_precision<double>()); }
+inline bool test_isMuchSmallerThan(const double& a, const double& b)
+{ return internal::isMuchSmallerThan(a, b, test_precision<double>()); }
+inline bool test_isApproxOrLessThan(const double& a, const double& b)
+{ return internal::isApproxOrLessThan(a, b, test_precision<double>()); }
+
+#ifndef EIGEN_TEST_NO_COMPLEX
+inline bool test_isApprox(const std::complex<float>& a, const std::complex<float>& b)
+{ return internal::isApprox(a, b, test_precision<std::complex<float> >()); }
+inline bool test_isMuchSmallerThan(const std::complex<float>& a, const std::complex<float>& b)
+{ return internal::isMuchSmallerThan(a, b, test_precision<std::complex<float> >()); }
+
+inline bool test_isApprox(const std::complex<double>& a, const std::complex<double>& b)
+{ return internal::isApprox(a, b, test_precision<std::complex<double> >()); }
+inline bool test_isMuchSmallerThan(const std::complex<double>& a, const std::complex<double>& b)
+{ return internal::isMuchSmallerThan(a, b, test_precision<std::complex<double> >()); }
+
+#ifndef EIGEN_TEST_NO_LONGDOUBLE
+inline bool test_isApprox(const std::complex<long double>& a, const std::complex<long double>& b)
+{ return internal::isApprox(a, b, test_precision<std::complex<long double> >()); }
+inline bool test_isMuchSmallerThan(const std::complex<long double>& a, const std::complex<long double>& b)
+{ return internal::isMuchSmallerThan(a, b, test_precision<std::complex<long double> >()); }
+#endif
+#endif
+
+#ifndef EIGEN_TEST_NO_LONGDOUBLE
+inline bool test_isApprox(const long double& a, const long double& b)
+{
+    bool ret = internal::isApprox(a, b, test_precision<long double>());
+    if (!ret) std::cerr
+        << std::endl << "    actual   = " << a
+        << std::endl << "    expected = " << b << std::endl << std::endl;
+    return ret;
+}
+
+inline bool test_isMuchSmallerThan(const long double& a, const long double& b)
+{ return internal::isMuchSmallerThan(a, b, test_precision<long double>()); }
+inline bool test_isApproxOrLessThan(const long double& a, const long double& b)
+{ return internal::isApproxOrLessThan(a, b, test_precision<long double>()); }
+#endif // EIGEN_TEST_NO_LONGDOUBLE
+
+inline bool test_isApprox(const half& a, const half& b)
+{ return internal::isApprox(a, b, test_precision<half>()); }
+inline bool test_isMuchSmallerThan(const half& a, const half& b)
+{ return internal::isMuchSmallerThan(a, b, test_precision<half>()); }
+inline bool test_isApproxOrLessThan(const half& a, const half& b)
+{ return internal::isApproxOrLessThan(a, b, test_precision<half>()); }
+
+// test_relative_error returns the relative difference between a and b as a real scalar as used in isApprox.
+template<typename T1,typename T2>
+typename T1::RealScalar test_relative_error(const EigenBase<T1> &a, const EigenBase<T2> &b)
+{
+  using std::sqrt;
+  typedef typename T1::RealScalar RealScalar;
+  typename internal::nested_eval<T1,2>::type ea(a.derived());
+  typename internal::nested_eval<T2,2>::type eb(b.derived());
+  return sqrt(RealScalar((ea-eb).cwiseAbs2().sum()) / RealScalar((std::min)(eb.cwiseAbs2().sum(),ea.cwiseAbs2().sum())));
+}
+
+template<typename T1,typename T2>
+typename T1::RealScalar test_relative_error(const T1 &a, const T2 &b, const typename T1::Coefficients* = 0)
+{
+  return test_relative_error(a.coeffs(), b.coeffs());
+}
+
+template<typename T1,typename T2>
+typename T1::Scalar test_relative_error(const T1 &a, const T2 &b, const typename T1::MatrixType* = 0)
+{
+  return test_relative_error(a.matrix(), b.matrix());
+}
+
+template<typename S, int D>
+S test_relative_error(const Translation<S,D> &a, const Translation<S,D> &b)
+{
+  return test_relative_error(a.vector(), b.vector());
+}
+
+template <typename S, int D, int O>
+S test_relative_error(const ParametrizedLine<S,D,O> &a, const ParametrizedLine<S,D,O> &b)
+{
+  return (std::max)(test_relative_error(a.origin(), b.origin()), test_relative_error(a.origin(), b.origin()));
+}
+
+template <typename S, int D>
+S test_relative_error(const AlignedBox<S,D> &a, const AlignedBox<S,D> &b)
+{
+  return (std::max)(test_relative_error((a.min)(), (b.min)()), test_relative_error((a.max)(), (b.max)()));
+}
+
+template<typename Derived> class SparseMatrixBase;
+template<typename T1,typename T2>
+typename T1::RealScalar test_relative_error(const MatrixBase<T1> &a, const SparseMatrixBase<T2> &b)
+{
+  return test_relative_error(a,b.toDense());
+}
+
+template<typename Derived> class SparseMatrixBase;
+template<typename T1,typename T2>
+typename T1::RealScalar test_relative_error(const SparseMatrixBase<T1> &a, const MatrixBase<T2> &b)
+{
+  return test_relative_error(a.toDense(),b);
+}
+
+template<typename Derived> class SparseMatrixBase;
+template<typename T1,typename T2>
+typename T1::RealScalar test_relative_error(const SparseMatrixBase<T1> &a, const SparseMatrixBase<T2> &b)
+{
+  return test_relative_error(a.toDense(),b.toDense());
+}
+
+template<typename T1,typename T2>
+typename NumTraits<T1>::Real test_relative_error(const T1 &a, const T2 &b, typename internal::enable_if<internal::is_arithmetic<typename NumTraits<T1>::Real>::value, T1>::type* = 0)
+{
+  typedef typename NumTraits<T1>::Real RealScalar; 
+  return numext::sqrt(RealScalar(numext::abs2(a-b))/RealScalar((numext::mini)(numext::abs2(a),numext::abs2(b))));
+}
+
+template<typename T>
+T test_relative_error(const Rotation2D<T> &a, const Rotation2D<T> &b)
+{
+  return test_relative_error(a.angle(), b.angle());
+}
+
+template<typename T>
+T test_relative_error(const AngleAxis<T> &a, const AngleAxis<T> &b)
+{
+  return (std::max)(test_relative_error(a.angle(), b.angle()), test_relative_error(a.axis(), b.axis()));
+}
+
+template<typename Type1, typename Type2>
+inline bool test_isApprox(const Type1& a, const Type2& b)
+{
+  return a.isApprox(b, test_precision<typename Type1::Scalar>());
+}
+
+// get_test_precision is a small wrapper to test_precision allowing to return the scalar precision for either scalars or expressions
+template<typename T>
+typename NumTraits<typename T::Scalar>::Real get_test_precision(const typename T::Scalar* = 0)
+{
+  return test_precision<typename NumTraits<typename T::Scalar>::Real>();
+}
+
+template<typename T>
+typename NumTraits<T>::Real get_test_precision(typename internal::enable_if<internal::is_arithmetic<typename NumTraits<T>::Real>::value, T>::type* = 0)
+{
+  return test_precision<typename NumTraits<T>::Real>();
+}
+
+// verifyIsApprox is a wrapper to test_isApprox that outputs the relative difference magnitude if the test fails.
+template<typename Type1, typename Type2>
+inline bool verifyIsApprox(const Type1& a, const Type2& b)
+{
+  bool ret = test_isApprox(a,b);
+  if(!ret)
+  {
+    std::cerr << "Difference too large wrt tolerance " << get_test_precision<Type1>()  << ", relative error is: " << test_relative_error(a,b) << std::endl;
+  }
+  return ret;
+}
+
+// The idea behind this function is to compare the two scalars a and b where
+// the scalar ref is a hint about the expected order of magnitude of a and b.
+// WARNING: the scalar a and b must be positive
+// Therefore, if for some reason a and b are very small compared to ref,
+// we won't issue a false negative.
+// This test could be: abs(a-b) <= eps * ref
+// However, it seems that simply comparing a+ref and b+ref is more sensitive to true error.
+template<typename Scalar,typename ScalarRef>
+inline bool test_isApproxWithRef(const Scalar& a, const Scalar& b, const ScalarRef& ref)
+{
+  return test_isApprox(a+ref, b+ref);
+}
+
+template<typename Derived1, typename Derived2>
+inline bool test_isMuchSmallerThan(const MatrixBase<Derived1>& m1,
+                                   const MatrixBase<Derived2>& m2)
+{
+  return m1.isMuchSmallerThan(m2, test_precision<typename internal::traits<Derived1>::Scalar>());
+}
+
+template<typename Derived>
+inline bool test_isMuchSmallerThan(const MatrixBase<Derived>& m,
+                                   const typename NumTraits<typename internal::traits<Derived>::Scalar>::Real& s)
+{
+  return m.isMuchSmallerThan(s, test_precision<typename internal::traits<Derived>::Scalar>());
+}
+
+template<typename Derived>
+inline bool test_isUnitary(const MatrixBase<Derived>& m)
+{
+  return m.isUnitary(test_precision<typename internal::traits<Derived>::Scalar>());
+}
+
+// Forw
