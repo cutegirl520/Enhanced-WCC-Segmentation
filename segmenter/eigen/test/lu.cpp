@@ -224,4 +224,58 @@ template<typename MatrixType> void lu_verify_assert()
   FullPivLU<MatrixType> lu;
   VERIFY_RAISES_ASSERT(lu.matrixLU())
   VERIFY_RAISES_ASSERT(lu.permutationP())
-  VERIFY_RAISES_AS
+  VERIFY_RAISES_ASSERT(lu.permutationQ())
+  VERIFY_RAISES_ASSERT(lu.kernel())
+  VERIFY_RAISES_ASSERT(lu.image(tmp))
+  VERIFY_RAISES_ASSERT(lu.solve(tmp))
+  VERIFY_RAISES_ASSERT(lu.determinant())
+  VERIFY_RAISES_ASSERT(lu.rank())
+  VERIFY_RAISES_ASSERT(lu.dimensionOfKernel())
+  VERIFY_RAISES_ASSERT(lu.isInjective())
+  VERIFY_RAISES_ASSERT(lu.isSurjective())
+  VERIFY_RAISES_ASSERT(lu.isInvertible())
+  VERIFY_RAISES_ASSERT(lu.inverse())
+
+  PartialPivLU<MatrixType> plu;
+  VERIFY_RAISES_ASSERT(plu.matrixLU())
+  VERIFY_RAISES_ASSERT(plu.permutationP())
+  VERIFY_RAISES_ASSERT(plu.solve(tmp))
+  VERIFY_RAISES_ASSERT(plu.determinant())
+  VERIFY_RAISES_ASSERT(plu.inverse())
+}
+
+void test_lu()
+{
+  for(int i = 0; i < g_repeat; i++) {
+    CALL_SUBTEST_1( lu_non_invertible<Matrix3f>() );
+    CALL_SUBTEST_1( lu_invertible<Matrix3f>() );
+    CALL_SUBTEST_1( lu_verify_assert<Matrix3f>() );
+
+    CALL_SUBTEST_2( (lu_non_invertible<Matrix<double, 4, 6> >()) );
+    CALL_SUBTEST_2( (lu_verify_assert<Matrix<double, 4, 6> >()) );
+
+    CALL_SUBTEST_3( lu_non_invertible<MatrixXf>() );
+    CALL_SUBTEST_3( lu_invertible<MatrixXf>() );
+    CALL_SUBTEST_3( lu_verify_assert<MatrixXf>() );
+
+    CALL_SUBTEST_4( lu_non_invertible<MatrixXd>() );
+    CALL_SUBTEST_4( lu_invertible<MatrixXd>() );
+    CALL_SUBTEST_4( lu_partial_piv<MatrixXd>() );
+    CALL_SUBTEST_4( lu_verify_assert<MatrixXd>() );
+
+    CALL_SUBTEST_5( lu_non_invertible<MatrixXcf>() );
+    CALL_SUBTEST_5( lu_invertible<MatrixXcf>() );
+    CALL_SUBTEST_5( lu_verify_assert<MatrixXcf>() );
+
+    CALL_SUBTEST_6( lu_non_invertible<MatrixXcd>() );
+    CALL_SUBTEST_6( lu_invertible<MatrixXcd>() );
+    CALL_SUBTEST_6( lu_partial_piv<MatrixXcd>() );
+    CALL_SUBTEST_6( lu_verify_assert<MatrixXcd>() );
+
+    CALL_SUBTEST_7(( lu_non_invertible<Matrix<float,Dynamic,16> >() ));
+
+    // Test problem size constructors
+    CALL_SUBTEST_9( PartialPivLU<MatrixXf>(10) );
+    CALL_SUBTEST_9( FullPivLU<MatrixXf>(10, 20); );
+  }
+}
