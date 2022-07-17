@@ -515,4 +515,229 @@ inline bool test_isUnitary(const MatrixBase<Derived>& m)
   return m.isUnitary(test_precision<typename internal::traits<Derived>::Scalar>());
 }
 
-// Forw
+// Forward declaration to avoid ICC warning
+template<typename T, typename U>
+bool test_is_equal(const T& actual, const U& expected, bool expect_equal=true);
+
+template<typename T, typename U>
+bool test_is_equal(const T& actual, const U& expected, bool expect_equal)
+{
+    if ((actual==expected) == expect_equal)
+        return true;
+    // false:
+    std::cerr
+        << "\n    actual   = " << actual
+        << "\n    expected " << (expect_equal ? "= " : "!=") << expected << "\n\n";
+    return false;
+}
+
+/** Creates a random Partial Isometry matrix of given rank.
+  *
+  * A partial isometry is a matrix all of whose singular values are either 0 or 1.
+  * This is very useful to test rank-revealing algorithms.
+  */
+// Forward declaration to avoid ICC warning
+template<typename MatrixType>
+void createRandomPIMatrixOfRank(Index desired_rank, Index rows, Index cols, MatrixType& m);
+template<typename MatrixType>
+void createRandomPIMatrixOfRank(Index desired_rank, Index rows, Index cols, MatrixType& m)
+{
+  typedef typename internal::traits<MatrixType>::Scalar Scalar;
+  enum { Rows = MatrixType::RowsAtCompileTime, Cols = MatrixType::ColsAtCompileTime };
+
+  typedef Matrix<Scalar, Dynamic, 1> VectorType;
+  typedef Matrix<Scalar, Rows, Rows> MatrixAType;
+  typedef Matrix<Scalar, Cols, Cols> MatrixBType;
+
+  if(desired_rank == 0)
+  {
+    m.setZero(rows,cols);
+    return;
+  }
+
+  if(desired_rank == 1)
+  {
+    // here we normalize the vectors to get a partial isometry
+    m = VectorType::Random(rows).normalized() * VectorType::Random(cols).normalized().transpose();
+    return;
+  }
+
+  MatrixAType a = MatrixAType::Random(rows,rows);
+  MatrixType d = MatrixType::Identity(rows,cols);
+  MatrixBType  b = MatrixBType::Random(cols,cols);
+
+  // set the diagonal such that only desired_rank non-zero entries reamain
+  const Index diag_size = (std::min)(d.rows(),d.cols());
+  if(diag_size != desired_rank)
+    d.diagonal().segment(desired_rank, diag_size-desired_rank) = VectorType::Zero(diag_size-desired_rank);
+
+  HouseholderQR<MatrixAType> qra(a);
+  HouseholderQR<MatrixBType> qrb(b);
+  m = qra.householderQ() * d * qrb.householderQ();
+}
+
+// Forward declaration to avoid ICC warning
+template<typename PermutationVectorType>
+void randomPermutationVector(PermutationVectorType& v, Index size);
+template<typename PermutationVectorType>
+void randomPermutationVector(PermutationVectorType& v, Index size)
+{
+  typedef typename PermutationVectorType::Scalar Scalar;
+  v.resize(size);
+  for(Index i = 0; i < size; ++i) v(i) = Scalar(i);
+  if(size == 1) return;
+  for(Index n = 0; n < 3 * size; ++n)
+  {
+    Index i = internal::random<Index>(0, size-1);
+    Index j;
+    do j = internal::random<Index>(0, size-1); while(j==i);
+    std::swap(v(i), v(j));
+  }
+}
+
+template<typename T> bool isNotNaN(const T& x)
+{
+  return x==x;
+}
+
+template<typename T> bool isPlusInf(const T& x)
+{
+  return x > NumTraits<T>::highest();
+}
+
+template<typename T> bool isMinusInf(const T& x)
+{
+  return x < NumTraits<T>::lowest();
+}
+
+} // end namespace Eigen
+
+template<typename T> struct GetDifferentType;
+
+template<> struct GetDifferentType<float> { typedef double type; };
+template<> struct GetDifferentType<double> { typedef float type; };
+template<typename T> struct GetDifferentType<std::complex<T> >
+{ typedef std::complex<typename GetDifferentType<T>::type> type; };
+
+// Forward declaration to avoid ICC warning
+template<typename T> std::string type_name();
+template<typename T> std::string type_name()                    { return "other"; }
+template<> std::string type_name<float>()                       { return "float"; }
+template<> std::string type_name<double>()                      { return "double"; }
+template<> std::string type_name<long double>()                 { return "long double"; }
+template<> std::string type_name<int>()                         { return "int"; }
+template<> std::string type_name<std::complex<float> >()        { return "complex<float>"; }
+template<> std::string type_name<std::complex<double> >()       { return "complex<double>"; }
+template<> std::string type_name<std::complex<long double> >()  { return "complex<long double>"; }
+template<> std::string type_name<std::complex<int> >()          { return "complex<int>"; }
+
+// forward declaration of the main test function
+void EIGEN_CAT(test_,EIGEN_TEST_FUNC)();
+
+using namespace Eigen;
+
+inline void set_repeat_from_string(const char *str)
+{
+  errno = 0;
+  g_repeat = int(strtoul(str, 0, 10));
+  if(errno || g_repeat <= 0)
+  {
+    std::cout << "Invalid repeat value " << str << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  g_has_set_repeat = true;
+}
+
+inline void set_seed_from_string(const char *str)
+{
+  errno = 0;
+  g_seed = int(strtoul(str, 0, 10));
+  if(errno || g_seed == 0)
+  {
+    std::cout << "Invalid seed value " << str << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  g_has_set_seed = true;
+}
+
+int main(int argc, char *argv[])
+{
+    g_has_set_repeat = false;
+    g_has_set_seed = false;
+    bool need_help = false;
+
+    for(int i = 1; i < argc; i++)
+    {
+      if(argv[i][0] == 'r')
+      {
+        if(g_has_set_repeat)
+        {
+          std::cout << "Argument " << argv[i] << " conflicting with a former argument" << std::endl;
+          return 1;
+        }
+        set_repeat_from_string(argv[i]+1);
+      }
+      else if(argv[i][0] == 's')
+      {
+        if(g_has_set_seed)
+        {
+          std::cout << "Argument " << argv[i] << " conflicting with a former argument" << std::endl;
+          return 1;
+        }
+         set_seed_from_string(argv[i]+1);
+      }
+      else
+      {
+        need_help = true;
+      }
+    }
+
+    if(need_help)
+    {
+      std::cout << "This test application takes the following optional arguments:" << std::endl;
+      std::cout << "  rN     Repeat each test N times (default: " << DEFAULT_REPEAT << ")" << std::endl;
+      std::cout << "  sN     Use N as seed for random numbers (default: based on current time)" << std::endl;
+      std::cout << std::endl;
+      std::cout << "If defined, the environment variables EIGEN_REPEAT and EIGEN_SEED" << std::endl;
+      std::cout << "will be used as default values for these parameters." << std::endl;
+      return 1;
+    }
+
+    char *env_EIGEN_REPEAT = getenv("EIGEN_REPEAT");
+    if(!g_has_set_repeat && env_EIGEN_REPEAT)
+      set_repeat_from_string(env_EIGEN_REPEAT);
+    char *env_EIGEN_SEED = getenv("EIGEN_SEED");
+    if(!g_has_set_seed && env_EIGEN_SEED)
+      set_seed_from_string(env_EIGEN_SEED);
+
+    if(!g_has_set_seed) g_seed = (unsigned int) time(NULL);
+    if(!g_has_set_repeat) g_repeat = DEFAULT_REPEAT;
+
+    std::cout << "Initializing random number generator with seed " << g_seed << std::endl;
+    std::stringstream ss;
+    ss << "Seed: " << g_seed;
+    g_test_stack.push_back(ss.str());
+    srand(g_seed);
+    std::cout << "Repeating each test " << g_repeat << " times" << std::endl;
+
+    Eigen::g_test_stack.push_back(std::string(EI_PP_MAKE_STRING(EIGEN_TEST_FUNC)));
+
+    EIGEN_CAT(test_,EIGEN_TEST_FUNC)();
+    return 0;
+}
+
+// These warning are disabled here such that they are still ON when parsing Eigen's header files.
+#if defined __INTEL_COMPILER
+  // remark #383: value copied to temporary, reference to temporary used
+  //  -> this warning is raised even for legal usage as: g_test_stack.push_back("foo"); where g_test_stack is a std::vector<std::string>
+  // remark #1418: external function definition with no prior declaration
+  //  -> this warning is raised for all our test functions. Declaring them static would fix the issue.
+  // warning #279: controlling expression is constant
+  // remark #1572: floating-point equality and inequality comparisons are unreliable
+  #pragma warning disable 279 383 1418 1572
+#endif
+
+#ifdef _MSC_VER
+  // 4503 - decorated name length exceeded, name was truncated
+  #pragma warning( disable : 4503)
+#endif
