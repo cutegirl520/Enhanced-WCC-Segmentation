@@ -68,4 +68,48 @@ void trmm(int rows=get_random_size<Scalar>(),
   // TODO check with sub-matrix expressions ?
 }
 
-template<typename Scalar, int
+template<typename Scalar, int Mode, int TriOrder>
+void trmv(int rows=get_random_size<Scalar>(), int cols=get_random_size<Scalar>())
+{
+  trmm<Scalar,Mode,TriOrder,ColMajor,ColMajor,1>(rows,cols,1);
+}
+
+template<typename Scalar, int Mode, int TriOrder, int OtherOrder, int ResOrder>
+void trmm(int rows=get_random_size<Scalar>(), int cols=get_random_size<Scalar>(), int otherCols = get_random_size<Scalar>())
+{
+  trmm<Scalar,Mode,TriOrder,OtherOrder,ResOrder,Dynamic>(rows,cols,otherCols);
+}
+
+#define CALL_ALL_ORDERS(NB,SCALAR,MODE)                                             \
+  EIGEN_CAT(CALL_SUBTEST_,NB)((trmm<SCALAR, MODE, ColMajor,ColMajor,ColMajor>()));  \
+  EIGEN_CAT(CALL_SUBTEST_,NB)((trmm<SCALAR, MODE, ColMajor,ColMajor,RowMajor>()));  \
+  EIGEN_CAT(CALL_SUBTEST_,NB)((trmm<SCALAR, MODE, ColMajor,RowMajor,ColMajor>()));  \
+  EIGEN_CAT(CALL_SUBTEST_,NB)((trmm<SCALAR, MODE, ColMajor,RowMajor,RowMajor>()));  \
+  EIGEN_CAT(CALL_SUBTEST_,NB)((trmm<SCALAR, MODE, RowMajor,ColMajor,ColMajor>()));  \
+  EIGEN_CAT(CALL_SUBTEST_,NB)((trmm<SCALAR, MODE, RowMajor,ColMajor,RowMajor>()));  \
+  EIGEN_CAT(CALL_SUBTEST_,NB)((trmm<SCALAR, MODE, RowMajor,RowMajor,ColMajor>()));  \
+  EIGEN_CAT(CALL_SUBTEST_,NB)((trmm<SCALAR, MODE, RowMajor,RowMajor,RowMajor>()));  \
+  \
+  EIGEN_CAT(CALL_SUBTEST_1,NB)((trmv<SCALAR, MODE, ColMajor>()));                   \
+  EIGEN_CAT(CALL_SUBTEST_1,NB)((trmv<SCALAR, MODE, RowMajor>()));
+
+  
+#define CALL_ALL(NB,SCALAR)                 \
+  CALL_ALL_ORDERS(EIGEN_CAT(1,NB),SCALAR,Upper)          \
+  CALL_ALL_ORDERS(EIGEN_CAT(2,NB),SCALAR,UnitUpper)      \
+  CALL_ALL_ORDERS(EIGEN_CAT(3,NB),SCALAR,StrictlyUpper)  \
+  CALL_ALL_ORDERS(EIGEN_CAT(1,NB),SCALAR,Lower)          \
+  CALL_ALL_ORDERS(EIGEN_CAT(2,NB),SCALAR,UnitLower)      \
+  CALL_ALL_ORDERS(EIGEN_CAT(3,NB),SCALAR,StrictlyLower)
+  
+
+void test_product_trmm()
+{
+  for(int i = 0; i < g_repeat ; i++)
+  {
+    CALL_ALL(1,float);                //  EIGEN_SUFFIXES;11;111;21;121;31;131
+    CALL_ALL(2,double);               //  EIGEN_SUFFIXES;12;112;22;122;32;132
+    CALL_ALL(3,std::complex<float>);  //  EIGEN_SUFFIXES;13;113;23;123;33;133
+    CALL_ALL(4,std::complex<double>); //  EIGEN_SUFFIXES;14;114;24;124;34;134
+  }
+}
