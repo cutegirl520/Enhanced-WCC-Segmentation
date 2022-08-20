@@ -67,4 +67,25 @@ template<typename MatrixType> void schur(int size = MatrixType::ColsAtCompileTim
   // Test computation of only T, not U
   ComplexSchur<MatrixType> csOnlyT(A, false);
   VERIFY_IS_EQUAL(csOnlyT.info(), Success);
-  VERIFY_IS_EQUAL(cs1.matrixT(), csOn
+  VERIFY_IS_EQUAL(cs1.matrixT(), csOnlyT.matrixT());
+  VERIFY_RAISES_ASSERT(csOnlyT.matrixU());
+
+  if (size > 1 && size < 20)
+  {
+    // Test matrix with NaN
+    A(0,0) = std::numeric_limits<typename MatrixType::RealScalar>::quiet_NaN();
+    ComplexSchur<MatrixType> csNaN(A);
+    VERIFY_IS_EQUAL(csNaN.info(), NoConvergence);
+  }
+}
+
+void test_schur_complex()
+{
+  CALL_SUBTEST_1(( schur<Matrix4cd>() ));
+  CALL_SUBTEST_2(( schur<MatrixXcf>(internal::random<int>(1,EIGEN_TEST_MAX_SIZE/4)) ));
+  CALL_SUBTEST_3(( schur<Matrix<std::complex<float>, 1, 1> >() ));
+  CALL_SUBTEST_4(( schur<Matrix<float, 3, 3, Eigen::RowMajor> >() ));
+
+  // Test problem size constructors
+  CALL_SUBTEST_5(ComplexSchur<MatrixXf>(10));
+}
