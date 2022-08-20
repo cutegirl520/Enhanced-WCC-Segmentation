@@ -163,4 +163,93 @@ template<typename SparseMatrixType> void sparse_block(const SparseMatrixType& re
       VERIFY_IS_APPROX(m2.innerVectors(j0,n0)+m2.innerVectors(j1,n0),
                        refMat2.middleRows(j0,n0)+refMat2.middleRows(j1,n0));
     else
-      VERIFY_IS_APPROX(m2.innerVectors(j0,n0)+m2.inne
+      VERIFY_IS_APPROX(m2.innerVectors(j0,n0)+m2.innerVectors(j1,n0),
+                      refMat2.block(0,j0,rows,n0)+refMat2.block(0,j1,rows,n0));
+    
+    VERIFY_IS_APPROX(m2, refMat2);
+    
+    VERIFY(m2.innerVectors(j0,n0).nonZeros() == m2.transpose().innerVectors(j0,n0).nonZeros());
+    
+    m2.innerVectors(j0,n0) = m2.innerVectors(j0,n0) + m2.innerVectors(j1,n0);
+    if(SparseMatrixType::IsRowMajor)
+      refMat2.middleRows(j0,n0) = (refMat2.middleRows(j0,n0) + refMat2.middleRows(j1,n0)).eval();
+    else
+      refMat2.middleCols(j0,n0) = (refMat2.middleCols(j0,n0) + refMat2.middleCols(j1,n0)).eval();
+    
+    VERIFY_IS_APPROX(m2, refMat2);
+  }
+
+  // test generic blocks
+  {
+    DenseMatrix refMat2 = DenseMatrix::Zero(rows, cols);
+    SparseMatrixType m2(rows, cols);
+    initSparse<Scalar>(density, refMat2, m2);
+    Index j0 = internal::random<Index>(0,outer-2);
+    Index j1 = internal::random<Index>(0,outer-2);
+    Index n0 = internal::random<Index>(1,outer-(std::max)(j0,j1));
+    if(SparseMatrixType::IsRowMajor)
+      VERIFY_IS_APPROX(m2.block(j0,0,n0,cols), refMat2.block(j0,0,n0,cols));
+    else
+      VERIFY_IS_APPROX(m2.block(0,j0,rows,n0), refMat2.block(0,j0,rows,n0));
+    
+    if(SparseMatrixType::IsRowMajor)
+      VERIFY_IS_APPROX(m2.block(j0,0,n0,cols)+m2.block(j1,0,n0,cols),
+                      refMat2.block(j0,0,n0,cols)+refMat2.block(j1,0,n0,cols));
+    else
+      VERIFY_IS_APPROX(m2.block(0,j0,rows,n0)+m2.block(0,j1,rows,n0),
+                      refMat2.block(0,j0,rows,n0)+refMat2.block(0,j1,rows,n0));
+      
+    Index i = internal::random<Index>(0,m2.outerSize()-1);
+    if(SparseMatrixType::IsRowMajor) {
+      m2.innerVector(i) = m2.innerVector(i) * s1;
+      refMat2.row(i) = refMat2.row(i) * s1;
+      VERIFY_IS_APPROX(m2,refMat2);
+    } else {
+      m2.innerVector(i) = m2.innerVector(i) * s1;
+      refMat2.col(i) = refMat2.col(i) * s1;
+      VERIFY_IS_APPROX(m2,refMat2);
+    }
+    
+    Index r0 = internal::random<Index>(0,rows-2);
+    Index c0 = internal::random<Index>(0,cols-2);
+    Index r1 = internal::random<Index>(1,rows-r0);
+    Index c1 = internal::random<Index>(1,cols-c0);
+    
+    VERIFY_IS_APPROX(DenseVector(m2.col(c0)), refMat2.col(c0));
+    VERIFY_IS_APPROX(m2.col(c0), refMat2.col(c0));
+    
+    VERIFY_IS_APPROX(RowDenseVector(m2.row(r0)), refMat2.row(r0));
+    VERIFY_IS_APPROX(m2.row(r0), refMat2.row(r0));
+
+    VERIFY_IS_APPROX(m2.block(r0,c0,r1,c1), refMat2.block(r0,c0,r1,c1));
+    VERIFY_IS_APPROX((2*m2).block(r0,c0,r1,c1), (2*refMat2).block(r0,c0,r1,c1));
+  }
+}
+
+void test_sparse_block()
+{
+  for(int i = 0; i < g_repeat; i++) {
+    int r = Eigen::internal::random<int>(1,200), c = Eigen::internal::random<int>(1,200);
+    if(Eigen::internal::random<int>(0,4) == 0) {
+      r = c; // check square matrices in 25% of tries
+    }
+    EIGEN_UNUSED_VARIABLE(r+c);
+    CALL_SUBTEST_1(( sparse_block(SparseMatrix<double>(1, 1)) ));
+    CALL_SUBTEST_1(( sparse_block(SparseMatrix<double>(8, 8)) ));
+    CALL_SUBTEST_1(( sparse_block(SparseMatrix<double>(r, c)) ));
+    CALL_SUBTEST_2(( sparse_block(SparseMatrix<std::complex<double>, ColMajor>(r, c)) ));
+    CALL_SUBTEST_2(( sparse_block(SparseMatrix<std::complex<double>, RowMajor>(r, c)) ));
+    
+    CALL_SUBTEST_3(( sparse_block(SparseMatrix<double,ColMajor,long int>(r, c)) ));
+    CALL_SUBTEST_3(( sparse_block(SparseMatrix<double,RowMajor,long int>(r, c)) ));
+    
+    r = Eigen::internal::random<int>(1,100);
+    c = Eigen::internal::random<int>(1,100);
+    if(Eigen::internal::random<int>(0,4) == 0) {
+      r = c; // check square matrices in 25% of tries
+    }
+    
+    CALL_SUBTEST_4(( sparse_block(SparseMatrix<double,ColMajor,short int>(short(r), short(c))) ));
+    CALL_SUBTEST_4(( sparse_block(SparseMatrix<double,RowMajor,short int>(short(r), short(c))) ));
+  }
+}
