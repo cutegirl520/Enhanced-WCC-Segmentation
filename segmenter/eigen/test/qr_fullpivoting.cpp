@@ -122,4 +122,20 @@ void test_qr_fullpivoting()
     CALL_SUBTEST_1( qr_invertible<MatrixXf>() );
     CALL_SUBTEST_2( qr_invertible<MatrixXd>() );
     CALL_SUBTEST_4( qr_invertible<MatrixXcf>() );
-    CALL_SUBTEST_3( qr_invertible
+    CALL_SUBTEST_3( qr_invertible<MatrixXcd>() );
+  }
+
+  CALL_SUBTEST_5(qr_verify_assert<Matrix3f>());
+  CALL_SUBTEST_6(qr_verify_assert<Matrix3d>());
+  CALL_SUBTEST_1(qr_verify_assert<MatrixXf>());
+  CALL_SUBTEST_2(qr_verify_assert<MatrixXd>());
+  CALL_SUBTEST_4(qr_verify_assert<MatrixXcf>());
+  CALL_SUBTEST_3(qr_verify_assert<MatrixXcd>());
+
+  // Test problem size constructors
+  CALL_SUBTEST_7(FullPivHouseholderQR<MatrixXf>(10, 20));
+  CALL_SUBTEST_7((FullPivHouseholderQR<Matrix<float,10,20> >(10,20)));
+  CALL_SUBTEST_7((FullPivHouseholderQR<Matrix<float,10,20> >(Matrix<float,10,20>::Random())));
+  CALL_SUBTEST_7((FullPivHouseholderQR<Matrix<float,20,10> >(20,10)));
+  CALL_SUBTEST_7((FullPivHouseholderQR<Matrix<float,20,10> >(Matrix<float,20,10>::Random())));
+}
