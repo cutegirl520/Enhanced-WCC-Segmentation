@@ -190,4 +190,47 @@ template<int OtherStorage, typename SparseMatrixType> void sparse_permutations(c
   res_d = ((p * lo_sym_d) * p.inverse()).eval().template triangularView<Lower>();
   VERIFY(res.isApprox(res_d) && "lower selfadjoint twisted to lower");
   
-  res.template selfadjointView<Lower>() = up.template selfadjointView<Upper>().twist
+  res.template selfadjointView<Lower>() = up.template selfadjointView<Upper>().twistedBy(p);
+  res_d = ((p * up_sym_d) * p.inverse()).eval().template triangularView<Lower>();
+  VERIFY(res.isApprox(res_d) && "upper selfadjoint twisted to lower");
+
+  
+  VERIFY( is_sorted( res = mat.template selfadjointView<Upper>().twistedBy(p) ));
+  res_d = (p * up_sym_d) * p.inverse();
+  VERIFY(res.isApprox(res_d) && "full selfadjoint upper twisted to full");
+  
+  VERIFY( is_sorted( res = mat.template selfadjointView<Lower>().twistedBy(p) ));
+  res_d = (p * lo_sym_d) * p.inverse();
+  VERIFY(res.isApprox(res_d) && "full selfadjoint lower twisted to full");
+  
+  VERIFY( is_sorted( res = up.template selfadjointView<Upper>().twistedBy(p) ));
+  res_d = (p * up_sym_d) * p.inverse();
+  VERIFY(res.isApprox(res_d) && "upper selfadjoint twisted to full");
+  
+  VERIFY( is_sorted( res = lo.template selfadjointView<Lower>().twistedBy(p) ));
+  res_d = (p * lo_sym_d) * p.inverse();
+  VERIFY(res.isApprox(res_d) && "lower selfadjoint twisted to full");
+}
+
+template<typename Scalar> void sparse_permutations_all(int size)
+{
+  CALL_SUBTEST(( sparse_permutations<ColMajor>(SparseMatrix<Scalar, ColMajor>(size,size)) ));
+  CALL_SUBTEST(( sparse_permutations<ColMajor>(SparseMatrix<Scalar, RowMajor>(size,size)) ));
+  CALL_SUBTEST(( sparse_permutations<RowMajor>(SparseMatrix<Scalar, ColMajor>(size,size)) ));
+  CALL_SUBTEST(( sparse_permutations<RowMajor>(SparseMatrix<Scalar, RowMajor>(size,size)) ));
+}
+
+void test_sparse_permutations()
+{
+  for(int i = 0; i < g_repeat; i++) {
+    int s = Eigen::internal::random<int>(1,50);
+    CALL_SUBTEST_1((  sparse_permutations_all<double>(s) ));
+    CALL_SUBTEST_2((  sparse_permutations_all<std::complex<double> >(s) ));
+  }
+
+  VERIFY((internal::is_same<internal::permutation_matrix_product<SparseMatrix<double>,OnTheRight,false,SparseShape>::ReturnType,
+                            internal::nested_eval<Product<SparseMatrix<double>,PermutationMatrix<Dynamic,Dynamic>,AliasFreeProduct>,1>::type>::value));
+
+  VERIFY((internal::is_same<internal::permutation_matrix_product<SparseMatrix<double>,OnTheLeft,false,SparseShape>::ReturnType,
+                            internal::nested_eval<Product<PermutationMatrix<Dynamic,Dynamic>,SparseMatrix<double>,AliasFreeProduct>,1>::type>::value));
+}
