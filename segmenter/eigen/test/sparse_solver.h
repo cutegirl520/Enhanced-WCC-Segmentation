@@ -415,4 +415,142 @@ template<typename Solver> void check_sparse_square_solving(Solver& solver, int m
     B.makeCompressed();
     CALL_SUBTEST(check_sparse_solving(solver, A, b,  dA, b));
     CALL_SUBTEST(check_sparse_solving(solver, A, dB, dA, dB));
-    CALL_SU
+    CALL_SUBTEST(check_sparse_solving(solver, A, B,  dA, dB));
+    
+    // check only once
+    if(i==0)
+    {
+      b = DenseVector::Zero(size);
+      check_sparse_solving(solver, A, b, dA, b);
+    }
+    // regression test for Bug 792 (structurally rank deficient matrices):
+    if(checkDeficient && size>1) {
+      Index col = internal::random<int>(0,int(size-1));
+      A.prune(prune_column(col));
+      solver.compute(A);
+      VERIFY_IS_EQUAL(solver.info(), NumericalIssue);
+    }
+  }
+  
+  // First, get the folder 
+#ifdef TEST_REAL_CASES
+  // Test real problems with double precision only
+  if (internal::is_same<typename NumTraits<Scalar>::Real, double>::value)
+  {
+    std::string mat_folder = get_matrixfolder<Scalar>();
+    MatrixMarketIterator<Scalar> it(mat_folder);
+    for (; it; ++it)
+    {
+      A = it.matrix();
+      if(A.diagonal().size() <= maxRealWorldSize)
+      {
+        DenseVector b = it.rhs();
+        DenseVector refX = it.refX();
+        std::cout << "INFO | Testing " << sym_to_string(it.sym()) << "sparse problem " << it.matname()
+                  << " (" << A.rows() << "x" << A.cols() << ") using " << typeid(Solver).name() << "..." << std::endl;
+        CALL_SUBTEST(check_sparse_solving_real_cases(solver, A, b, A, refX));
+        std::string stats = solver_stats(solver);
+        if(stats.size()>0)
+          std::cout << "INFO |  " << stats << std::endl;
+      }
+      else
+      {
+        std::cout << "INFO | SKIP sparse problem \"" << it.matname() << "\" (too large)" << std::endl;
+      }
+    }
+  }
+#else
+  EIGEN_UNUSED_VARIABLE(maxRealWorldSize);
+#endif
+
+}
+
+template<typename Solver> void check_sparse_square_determinant(Solver& solver)
+{
+  typedef typename Solver::MatrixType Mat;
+  typedef typename Mat::Scalar Scalar;
+  typedef Matrix<Scalar,Dynamic,Dynamic> DenseMatrix;
+  
+  for (int i = 0; i < g_repeat; i++) {
+    // generate the problem
+    Mat A;
+    DenseMatrix dA;
+    
+    int size = internal::random<int>(1,30);
+    dA.setRandom(size,size);
+    
+    dA = (dA.array().abs()<0.3).select(0,dA);
+    dA.diagonal() = (dA.diagonal().array()==0).select(1,dA.diagonal());
+    A = dA.sparseView();
+    A.makeCompressed();
+  
+    check_sparse_determinant(solver, A, dA);
+  }
+}
+
+template<typename Solver> void check_sparse_square_abs_determinant(Solver& solver)
+{
+  typedef typename Solver::MatrixType Mat;
+  typedef typename Mat::Scalar Scalar;
+  typedef Matrix<Scalar,Dynamic,Dynamic> DenseMatrix;
+
+  for (int i = 0; i < g_repeat; i++) {
+    // generate the problem
+    Mat A;
+    DenseMatrix dA;
+    generate_sparse_square_problem(solver, A, dA, 30);
+    A.makeCompressed();
+    check_sparse_abs_determinant(solver, A, dA);
+  }
+}
+
+template<typename Solver, typename DenseMat>
+void generate_sparse_leastsquare_problem(Solver&, typename Solver::MatrixType& A, DenseMat& dA, int maxSize = 300, int options = ForceNonZeroDiag)
+{
+  typedef typename Solver::MatrixType Mat;
+  typedef typename Mat::Scalar Scalar;
+
+  int rows = internal::random<int>(1,maxSize);
+  int cols = internal::random<int>(1,rows);
+  double density = (std::max)(8./(rows*cols), 0.01);
+  
+  A.resize(rows,cols);
+  dA.resize(rows,cols);
+
+  initSparse<Scalar>(density, dA, A, options);
+}
+
+template<typename Solver> void check_sparse_leastsquare_solving(Solver& solver)
+{
+  typedef typename Solver::MatrixType Mat;
+  typedef typename Mat::Scalar Scalar;
+  typedef SparseMatrix<Scalar,ColMajor, typename Mat::StorageIndex> SpMat;
+  typedef Matrix<Scalar,Dynamic,Dynamic> DenseMatrix;
+  typedef Matrix<Scalar,Dynamic,1> DenseVector;
+
+  int rhsCols = internal::random<int>(1,16);
+
+  Mat A;
+  DenseMatrix dA;
+  for (int i = 0; i < g_repeat; i++) {
+    generate_sparse_leastsquare_problem(solver, A, dA);
+
+    A.makeCompressed();
+    DenseVector b = DenseVector::Random(A.rows());
+    DenseMatrix dB(A.rows(),rhsCols);
+    SpMat B(A.rows(),rhsCols);
+    double density = (std::max)(8./(A.rows()*rhsCols), 0.1);
+    initSparse<Scalar>(density, dB, B, ForceNonZeroDiag);
+    B.makeCompressed();
+    check_sparse_solving(solver, A, b,  dA, b);
+    check_sparse_solving(solver, A, dB, dA, dB);
+    check_sparse_solving(solver, A, B,  dA, dB);
+    
+    // check only once
+    if(i==0)
+    {
+      b = DenseVector::Zero(A.rows());
+      check_sparse_solving(solver, A, b, dA, b);
+    }
+  }
+}
