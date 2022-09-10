@@ -106,4 +106,142 @@ template<typename MatrixType> void triangular_square(const MatrixType& m)
 //   VERIFY((  m1.template triangularView<Upper>()
 //           * m2.template triangularView<Upper>()).isUpperTriangular());
 
-  // test 
+  // test swap
+  m1.setOnes();
+  m2.setZero();
+  m2.template triangularView<Upper>().swap(m1);
+  m3.setZero();
+  m3.template triangularView<Upper>().setOnes();
+  VERIFY_IS_APPROX(m2,m3);
+  
+  m1.setRandom();
+  m3 = m1.template triangularView<Upper>();
+  Matrix<Scalar, MatrixType::ColsAtCompileTime, Dynamic> m5(cols, internal::random<int>(1,20));  m5.setRandom();
+  Matrix<Scalar, Dynamic, MatrixType::RowsAtCompileTime> m6(internal::random<int>(1,20), rows);  m6.setRandom();
+  VERIFY_IS_APPROX(m1.template triangularView<Upper>() * m5, m3*m5);
+  VERIFY_IS_APPROX(m6*m1.template triangularView<Upper>(), m6*m3);
+
+  m1up = m1.template triangularView<Upper>();
+  VERIFY_IS_APPROX(m1.template selfadjointView<Upper>().template triangularView<Upper>().toDenseMatrix(), m1up);
+  VERIFY_IS_APPROX(m1up.template selfadjointView<Upper>().template triangularView<Upper>().toDenseMatrix(), m1up);
+  VERIFY_IS_APPROX(m1.template selfadjointView<Upper>().template triangularView<Lower>().toDenseMatrix(), m1up.adjoint());
+  VERIFY_IS_APPROX(m1up.template selfadjointView<Upper>().template triangularView<Lower>().toDenseMatrix(), m1up.adjoint());
+
+  VERIFY_IS_APPROX(m1.template selfadjointView<Upper>().diagonal(), m1.diagonal());
+
+}
+
+
+template<typename MatrixType> void triangular_rect(const MatrixType& m)
+{
+  typedef const typename MatrixType::Index Index;
+  typedef typename MatrixType::Scalar Scalar;
+  typedef typename NumTraits<Scalar>::Real RealScalar;
+  enum { Rows =  MatrixType::RowsAtCompileTime, Cols =  MatrixType::ColsAtCompileTime };
+
+  Index rows = m.rows();
+  Index cols = m.cols();
+
+  MatrixType m1 = MatrixType::Random(rows, cols),
+             m2 = MatrixType::Random(rows, cols),
+             m3(rows, cols),
+             m4(rows, cols),
+             r1(rows, cols),
+             r2(rows, cols);
+
+  MatrixType m1up = m1.template triangularView<Upper>();
+  MatrixType m2up = m2.template triangularView<Upper>();
+
+  if (rows>1 && cols>1)
+  {
+    VERIFY(m1up.isUpperTriangular());
+    VERIFY(m2up.transpose().isLowerTriangular());
+    VERIFY(!m2.isLowerTriangular());
+  }
+
+  // test overloaded operator+=
+  r1.setZero();
+  r2.setZero();
+  r1.template triangularView<Upper>() +=  m1;
+  r2 += m1up;
+  VERIFY_IS_APPROX(r1,r2);
+
+  // test overloaded operator=
+  m1.setZero();
+  m1.template triangularView<Upper>() = 3 * m2;
+  m3 = 3 * m2;
+  VERIFY_IS_APPROX(m3.template triangularView<Upper>().toDenseMatrix(), m1);
+
+
+  m1.setZero();
+  m1.template triangularView<Lower>() = 3 * m2;
+  VERIFY_IS_APPROX(m3.template triangularView<Lower>().toDenseMatrix(), m1);
+
+  m1.setZero();
+  m1.template triangularView<StrictlyUpper>() = 3 * m2;
+  VERIFY_IS_APPROX(m3.template triangularView<StrictlyUpper>().toDenseMatrix(), m1);
+
+
+  m1.setZero();
+  m1.template triangularView<StrictlyLower>() = 3 * m2;
+  VERIFY_IS_APPROX(m3.template triangularView<StrictlyLower>().toDenseMatrix(), m1);
+  m1.setRandom();
+  m2 = m1.template triangularView<Upper>();
+  VERIFY(m2.isUpperTriangular());
+  VERIFY(!m2.isLowerTriangular());
+  m2 = m1.template triangularView<StrictlyUpper>();
+  VERIFY(m2.isUpperTriangular());
+  VERIFY(m2.diagonal().isMuchSmallerThan(RealScalar(1)));
+  m2 = m1.template triangularView<UnitUpper>();
+  VERIFY(m2.isUpperTriangular());
+  m2.diagonal().array() -= Scalar(1);
+  VERIFY(m2.diagonal().isMuchSmallerThan(RealScalar(1)));
+  m2 = m1.template triangularView<Lower>();
+  VERIFY(m2.isLowerTriangular());
+  VERIFY(!m2.isUpperTriangular());
+  m2 = m1.template triangularView<StrictlyLower>();
+  VERIFY(m2.isLowerTriangular());
+  VERIFY(m2.diagonal().isMuchSmallerThan(RealScalar(1)));
+  m2 = m1.template triangularView<UnitLower>();
+  VERIFY(m2.isLowerTriangular());
+  m2.diagonal().array() -= Scalar(1);
+  VERIFY(m2.diagonal().isMuchSmallerThan(RealScalar(1)));
+  // test swap
+  m1.setOnes();
+  m2.setZero();
+  m2.template triangularView<Upper>().swap(m1);
+  m3.setZero();
+  m3.template triangularView<Upper>().setOnes();
+  VERIFY_IS_APPROX(m2,m3);
+}
+
+void bug_159()
+{
+  Matrix3d m = Matrix3d::Random().triangularView<Lower>();
+  EIGEN_UNUSED_VARIABLE(m)
+}
+
+void test_triangular()
+{
+  int maxsize = (std::min)(EIGEN_TEST_MAX_SIZE,20);
+  for(int i = 0; i < g_repeat ; i++)
+  {
+    int r = internal::random<int>(2,maxsize); TEST_SET_BUT_UNUSED_VARIABLE(r)
+    int c = internal::random<int>(2,maxsize); TEST_SET_BUT_UNUSED_VARIABLE(c)
+
+    CALL_SUBTEST_1( triangular_square(Matrix<float, 1, 1>()) );
+    CALL_SUBTEST_2( triangular_square(Matrix<float, 2, 2>()) );
+    CALL_SUBTEST_3( triangular_square(Matrix3d()) );
+    CALL_SUBTEST_4( triangular_square(Matrix<std::complex<float>,8, 8>()) );
+    CALL_SUBTEST_5( triangular_square(MatrixXcd(r,r)) );
+    CALL_SUBTEST_6( triangular_square(Matrix<float,Dynamic,Dynamic,RowMajor>(r, r)) );
+
+    CALL_SUBTEST_7( triangular_rect(Matrix<float, 4, 5>()) );
+    CALL_SUBTEST_8( triangular_rect(Matrix<double, 6, 2>()) );
+    CALL_SUBTEST_9( triangular_rect(MatrixXcf(r, c)) );
+    CALL_SUBTEST_5( triangular_rect(MatrixXcd(r, c)) );
+    CALL_SUBTEST_6( triangular_rect(Matrix<float,Dynamic,Dynamic,RowMajor>(r, c)) );
+  }
+  
+  CALL_SUBTEST_1( bug_159() );
+}
