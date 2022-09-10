@@ -340,4 +340,139 @@ void svd_underoverflow()
     id(k)++;
     if(id(k)>=value_set.size())
     {
-      while(k<3 && id(
+      while(k<3 && id(k)>=value_set.size()) id(++k)++;
+      id.head(k).setZero();
+      k=0;
+    }
+    
+  } while((id<int(value_set.size())).all());
+  
+#if defined __INTEL_COMPILER
+#pragma warning pop
+#endif
+  
+  // Check for overflow:
+  Matrix3d M3;
+  M3 << 4.4331978442502944e+307, -5.8585363752028680e+307,  6.4527017443412964e+307,
+        3.7841695601406358e+307,  2.4331702789740617e+306, -3.5235707140272905e+307,
+       -8.7190887618028355e+307, -7.3453213709232193e+307, -2.4367363684472105e+307;
+
+  SVD_DEFAULT(Matrix3d) svd3;
+  svd3.compute(M3,ComputeFullU|ComputeFullV); // just check we don't loop indefinitely
+  CALL_SUBTEST( svd_check_full(M3,svd3) );
+}
+
+// void jacobisvd(const MatrixType& a = MatrixType(), bool pickrandom = true)
+
+template<typename MatrixType>
+void svd_all_trivial_2x2( void (*cb)(const MatrixType&,bool) )
+{
+  MatrixType M;
+  VectorXd value_set(3);
+  value_set << 0, 1, -1;
+  Array4i id(0,0,0,0);
+  int k = 0;
+  do
+  {
+    M << value_set(id(0)), value_set(id(1)), value_set(id(2)), value_set(id(3));
+    
+    cb(M,false);
+    
+    id(k)++;
+    if(id(k)>=value_set.size())
+    {
+      while(k<3 && id(k)>=value_set.size()) id(++k)++;
+      id.head(k).setZero();
+      k=0;
+    }
+    
+  } while((id<int(value_set.size())).all());
+}
+
+template<typename>
+void svd_preallocate()
+{
+  Vector3f v(3.f, 2.f, 1.f);
+  MatrixXf m = v.asDiagonal();
+
+  internal::set_is_malloc_allowed(false);
+  VERIFY_RAISES_ASSERT(VectorXf tmp(10);)
+  SVD_DEFAULT(MatrixXf) svd;
+  internal::set_is_malloc_allowed(true);
+  svd.compute(m);
+  VERIFY_IS_APPROX(svd.singularValues(), v);
+
+  SVD_DEFAULT(MatrixXf) svd2(3,3);
+  internal::set_is_malloc_allowed(false);
+  svd2.compute(m);
+  internal::set_is_malloc_allowed(true);
+  VERIFY_IS_APPROX(svd2.singularValues(), v);
+  VERIFY_RAISES_ASSERT(svd2.matrixU());
+  VERIFY_RAISES_ASSERT(svd2.matrixV());
+  svd2.compute(m, ComputeFullU | ComputeFullV);
+  VERIFY_IS_APPROX(svd2.matrixU(), Matrix3f::Identity());
+  VERIFY_IS_APPROX(svd2.matrixV(), Matrix3f::Identity());
+  internal::set_is_malloc_allowed(false);
+  svd2.compute(m);
+  internal::set_is_malloc_allowed(true);
+
+  SVD_DEFAULT(MatrixXf) svd3(3,3,ComputeFullU|ComputeFullV);
+  internal::set_is_malloc_allowed(false);
+  svd2.compute(m);
+  internal::set_is_malloc_allowed(true);
+  VERIFY_IS_APPROX(svd2.singularValues(), v);
+  VERIFY_IS_APPROX(svd2.matrixU(), Matrix3f::Identity());
+  VERIFY_IS_APPROX(svd2.matrixV(), Matrix3f::Identity());
+  internal::set_is_malloc_allowed(false);
+  svd2.compute(m, ComputeFullU|ComputeFullV);
+  internal::set_is_malloc_allowed(true);
+}
+
+template<typename SvdType,typename MatrixType> 
+void svd_verify_assert(const MatrixType& m)
+{
+  typedef typename MatrixType::Scalar Scalar;
+  typedef typename MatrixType::Index Index;
+  Index rows = m.rows();
+  Index cols = m.cols();
+
+  enum {
+    RowsAtCompileTime = MatrixType::RowsAtCompileTime,
+    ColsAtCompileTime = MatrixType::ColsAtCompileTime
+  };
+
+  typedef Matrix<Scalar, RowsAtCompileTime, 1> RhsType;
+  RhsType rhs(rows);
+  SvdType svd;
+  VERIFY_RAISES_ASSERT(svd.matrixU())
+  VERIFY_RAISES_ASSERT(svd.singularValues())
+  VERIFY_RAISES_ASSERT(svd.matrixV())
+  VERIFY_RAISES_ASSERT(svd.solve(rhs))
+  MatrixType a = MatrixType::Zero(rows, cols);
+  a.setZero();
+  svd.compute(a, 0);
+  VERIFY_RAISES_ASSERT(svd.matrixU())
+  VERIFY_RAISES_ASSERT(svd.matrixV())
+  svd.singularValues();
+  VERIFY_RAISES_ASSERT(svd.solve(rhs))
+    
+  if (ColsAtCompileTime == Dynamic)
+  {
+    svd.compute(a, ComputeThinU);
+    svd.matrixU();
+    VERIFY_RAISES_ASSERT(svd.matrixV())
+    VERIFY_RAISES_ASSERT(svd.solve(rhs))
+    svd.compute(a, ComputeThinV);
+    svd.matrixV();
+    VERIFY_RAISES_ASSERT(svd.matrixU())
+    VERIFY_RAISES_ASSERT(svd.solve(rhs))
+  }
+  else
+  {
+    VERIFY_RAISES_ASSERT(svd.compute(a, ComputeThinU))
+    VERIFY_RAISES_ASSERT(svd.compute(a, ComputeThinV))
+  }
+}
+
+#undef SVD_DEFAULT
+#undef SVD_FOR_MIN_NORM
