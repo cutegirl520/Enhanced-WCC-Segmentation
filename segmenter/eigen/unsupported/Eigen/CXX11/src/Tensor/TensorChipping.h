@@ -130,4 +130,255 @@ struct TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device>
 {
   typedef TensorChippingOp<DimId, ArgType> XprType;
   static const int NumInputDims = internal::array_size<typename TensorEvaluator<ArgType, Device>::Dimensions>::value;
-  static const int NumDims 
+  static const int NumDims = NumInputDims-1;
+  typedef typename XprType::Index Index;
+  typedef DSizes<Index, NumDims> Dimensions;
+  typedef typename XprType::Scalar Scalar;
+  typedef typename XprType::CoeffReturnType CoeffReturnType;
+  typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
+  static const int PacketSize = internal::unpacket_traits<PacketReturnType>::size;
+
+
+  enum {
+    // Alignment can't be guaranteed at compile time since it depends on the
+    // slice offsets.
+    IsAligned = false,
+    PacketAccess = TensorEvaluator<ArgType, Device>::PacketAccess,
+    Layout = TensorEvaluator<ArgType, Device>::Layout,
+    CoordAccess = false,  // to be implemented
+    RawAccess = false
+  };
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorEvaluator(const XprType& op, const Device& device)
+      : m_impl(op.expression(), device), m_dim(op.dim()), m_device(device)
+  {
+    EIGEN_STATIC_ASSERT((NumInputDims >= 1), YOU_MADE_A_PROGRAMMING_MISTAKE);
+    eigen_assert(NumInputDims > m_dim.actualDim());
+
+    const typename TensorEvaluator<ArgType, Device>::Dimensions& input_dims = m_impl.dimensions();
+    eigen_assert(op.offset() < input_dims[m_dim.actualDim()]);
+
+    int j = 0;
+    for (int i = 0; i < NumInputDims; ++i) {
+      if (i != m_dim.actualDim()) {
+        m_dimensions[j] = input_dims[i];
+        ++j;
+      }
+    }
+
+    m_stride = 1;
+    m_inputStride = 1;
+    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      for (int i = 0; i < m_dim.actualDim(); ++i) {
+        m_stride *= input_dims[i];
+        m_inputStride *= input_dims[i];
+      }
+    } else {
+      for (int i = NumInputDims-1; i > m_dim.actualDim(); --i) {
+        m_stride *= input_dims[i];
+        m_inputStride *= input_dims[i];
+      }
+    }
+    m_inputStride *= input_dims[m_dim.actualDim()];
+    m_inputOffset = m_stride * op.offset();
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const Dimensions& dimensions() const { return m_dimensions; }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool evalSubExprsIfNeeded(Scalar* /*data*/) {
+    m_impl.evalSubExprsIfNeeded(NULL);
+    return true;
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void cleanup() {
+    m_impl.cleanup();
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType coeff(Index index) const
+  {
+    return m_impl.coeff(srcCoeff(index));
+  }
+
+  template<int LoadMode>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packet(Index index) const
+  {
+    EIGEN_STATIC_ASSERT((PacketSize > 1), YOU_MADE_A_PROGRAMMING_MISTAKE)
+    eigen_assert(index+PacketSize-1 < dimensions().TotalSize());
+
+    if ((static_cast<int>(Layout) == static_cast<int>(ColMajor) && m_dim.actualDim() == 0) ||
+	(static_cast<int>(Layout) == static_cast<int>(RowMajor) && m_dim.actualDim() == NumInputDims-1)) {
+      // m_stride is equal to 1, so let's avoid the integer division.
+      eigen_assert(m_stride == 1);
+      Index inputIndex = index * m_inputStride + m_inputOffset;
+      EIGEN_ALIGN_MAX typename internal::remove_const<CoeffReturnType>::type values[PacketSize];
+      for (int i = 0; i < PacketSize; ++i) {
+        values[i] = m_impl.coeff(inputIndex);
+        inputIndex += m_inputStride;
+      }
+      PacketReturnType rslt = internal::pload<PacketReturnType>(values);
+      return rslt;
+    } else if ((static_cast<int>(Layout) == static_cast<int>(ColMajor) && m_dim.actualDim() == NumInputDims - 1) ||
+	       (static_cast<int>(Layout) == static_cast<int>(RowMajor) && m_dim.actualDim() == 0)) {
+      // m_stride is aways greater than index, so let's avoid the integer division.
+      eigen_assert(m_stride > index);
+      return m_impl.template packet<LoadMode>(index + m_inputOffset);
+    } else {
+      const Index idx = index / m_stride;
+      const Index rem = index - idx * m_stride;
+      if (rem + PacketSize <= m_stride) {
+        Index inputIndex = idx * m_inputStride + m_inputOffset + rem;
+        return m_impl.template packet<LoadMode>(inputIndex);
+      } else {
+        // Cross the stride boundary. Fallback to slow path.
+        EIGEN_ALIGN_MAX typename internal::remove_const<CoeffReturnType>::type values[PacketSize];
+        for (int i = 0; i < PacketSize; ++i) {
+          values[i] = coeff(index);
+          ++index;
+        }
+        PacketReturnType rslt = internal::pload<PacketReturnType>(values);
+        return rslt;
+      }
+    }
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorOpCost
+  costPerCoeff(bool vectorized) const {
+    double cost = 0;
+    if ((static_cast<int>(Layout) == static_cast<int>(ColMajor) &&
+         m_dim.actualDim() == 0) ||
+        (static_cast<int>(Layout) == static_cast<int>(RowMajor) &&
+         m_dim.actualDim() == NumInputDims - 1)) {
+      cost += TensorOpCost::MulCost<Index>() + TensorOpCost::AddCost<Index>();
+    } else if ((static_cast<int>(Layout) == static_cast<int>(ColMajor) &&
+                m_dim.actualDim() == NumInputDims - 1) ||
+               (static_cast<int>(Layout) == static_cast<int>(RowMajor) &&
+                m_dim.actualDim() == 0)) {
+      cost += TensorOpCost::AddCost<Index>();
+    } else {
+      cost += 3 * TensorOpCost::MulCost<Index>() + TensorOpCost::DivCost<Index>() +
+              3 * TensorOpCost::AddCost<Index>();
+    }
+
+    return m_impl.costPerCoeff(vectorized) +
+           TensorOpCost(0, 0, cost, vectorized, PacketSize);
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType* data() const {
+    CoeffReturnType* result = const_cast<CoeffReturnType*>(m_impl.data());
+    if (((static_cast<int>(Layout) == static_cast<int>(ColMajor) && m_dim.actualDim() == NumDims) ||
+         (static_cast<int>(Layout) == static_cast<int>(RowMajor) && m_dim.actualDim() == 0)) &&
+        result) {
+      return result + m_inputOffset;
+    } else {
+      return NULL;
+    }
+  }
+
+ protected:
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index srcCoeff(Index index) const
+  {
+    Index inputIndex;
+    if ((static_cast<int>(Layout) == static_cast<int>(ColMajor) && m_dim.actualDim() == 0) ||
+	(static_cast<int>(Layout) == static_cast<int>(RowMajor) && m_dim.actualDim() == NumInputDims-1)) {
+      // m_stride is equal to 1, so let's avoid the integer division.
+      eigen_assert(m_stride == 1);
+      inputIndex = index * m_inputStride + m_inputOffset;
+    } else if ((static_cast<int>(Layout) == static_cast<int>(ColMajor) && m_dim.actualDim() == NumInputDims-1) ||
+	       (static_cast<int>(Layout) == static_cast<int>(RowMajor) && m_dim.actualDim() == 0)) {
+      // m_stride is aways greater than index, so let's avoid the integer division.
+      eigen_assert(m_stride > index);
+      inputIndex = index + m_inputOffset;
+    } else {
+      const Index idx = index / m_stride;
+      inputIndex = idx * m_inputStride + m_inputOffset;
+      index -= idx * m_stride;
+      inputIndex += index;
+    }
+    return inputIndex;
+  }
+
+  Dimensions m_dimensions;
+  Index m_stride;
+  Index m_inputOffset;
+  Index m_inputStride;
+  TensorEvaluator<ArgType, Device> m_impl;
+  const internal::DimensionId<DimId> m_dim;
+  const Device& m_device;
+};
+
+
+// Eval as lvalue
+template<DenseIndex DimId, typename ArgType, typename Device>
+struct TensorEvaluator<TensorChippingOp<DimId, ArgType>, Device>
+  : public TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device>
+{
+  typedef TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device> Base;
+  typedef TensorChippingOp<DimId, ArgType> XprType;
+  static const int NumInputDims = internal::array_size<typename TensorEvaluator<ArgType, Device>::Dimensions>::value;
+  static const int NumDims = NumInputDims-1;
+  typedef typename XprType::Index Index;
+  typedef DSizes<Index, NumDims> Dimensions;
+  typedef typename XprType::Scalar Scalar;
+  typedef typename XprType::CoeffReturnType CoeffReturnType;
+  typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
+  static const int PacketSize = internal::unpacket_traits<PacketReturnType>::size;
+
+  enum {
+    IsAligned = false,
+    PacketAccess = TensorEvaluator<ArgType, Device>::PacketAccess,
+    RawAccess = false
+  };
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorEvaluator(const XprType& op, const Device& device)
+    : Base(op, device)
+    { }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType& coeffRef(Index index)
+  {
+    return this->m_impl.coeffRef(this->srcCoeff(index));
+  }
+
+  template <int StoreMode> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
+  void writePacket(Index index, const PacketReturnType& x)
+  {
+    EIGEN_STATIC_ASSERT((PacketSize > 1), YOU_MADE_A_PROGRAMMING_MISTAKE)
+
+    if ((static_cast<int>(this->Layout) == static_cast<int>(ColMajor) && this->m_dim.actualDim() == 0) ||
+	(static_cast<int>(this->Layout) == static_cast<int>(RowMajor) && this->m_dim.actualDim() == NumInputDims-1)) {
+      // m_stride is equal to 1, so let's avoid the integer division.
+      eigen_assert(this->m_stride == 1);
+      EIGEN_ALIGN_MAX typename internal::remove_const<CoeffReturnType>::type values[PacketSize];
+      internal::pstore<CoeffReturnType, PacketReturnType>(values, x);
+      Index inputIndex = index * this->m_inputStride + this->m_inputOffset;
+      for (int i = 0; i < PacketSize; ++i) {
+        this->m_impl.coeffRef(inputIndex) = values[i];
+        inputIndex += this->m_inputStride;
+      }
+    } else if ((static_cast<int>(this->Layout) == static_cast<int>(ColMajor) && this->m_dim.actualDim() == NumInputDims-1) ||
+	       (static_cast<int>(this->Layout) == static_cast<int>(RowMajor) && this->m_dim.actualDim() == 0)) {
+      // m_stride is aways greater than index, so let's avoid the integer division.
+      eigen_assert(this->m_stride > index);
+      this->m_impl.template writePacket<StoreMode>(index + this->m_inputOffset, x);
+    } else {
+      const Index idx = index / this->m_stride;
+      const Index rem = index - idx * this->m_stride;
+      if (rem + PacketSize <= this->m_stride) {
+        const Index inputIndex = idx * this->m_inputStride + this->m_inputOffset + rem;
+        this->m_impl.template writePacket<StoreMode>(inputIndex, x);
+      } else {
+        // Cross stride boundary. Fallback to slow path.
+        EIGEN_ALIGN_MAX typename internal::remove_const<CoeffReturnType>::type values[PacketSize];
+        internal::pstore<CoeffReturnType, PacketReturnType>(values, x);
+        for (int i = 0; i < PacketSize; ++i) {
+          this->coeffRef(index) = values[i];
+          ++index;
+        }
+      }
+    }
+  }
+};
+
+
+} // end namespace Eigen
+
+#endif // EIGEN_CXX11_TENSOR_TENSOR_CHIPPING_H
