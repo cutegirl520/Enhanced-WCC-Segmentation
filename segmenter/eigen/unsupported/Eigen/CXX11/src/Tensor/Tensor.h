@@ -382,4 +382,146 @@ class Tensor : public TensorBase<Tensor<Scalar_, NumIndices_, Options_, IndexTyp
     template<typename OtherDerived>
     EIGEN_DEVICE_FUNC
     EIGEN_STRONG_INLINE Tensor(const TensorBase<OtherDerived, ReadOnlyAccessors>& other)
- 
+    {
+      typedef TensorAssignOp<Tensor, const OtherDerived> Assign;
+      Assign assign(*this, other.derived());
+      resize(TensorEvaluator<const Assign, DefaultDevice>(assign, DefaultDevice()).dimensions());
+      internal::TensorExecutor<const Assign, DefaultDevice>::run(assign, DefaultDevice());
+    }
+    template<typename OtherDerived>
+    EIGEN_DEVICE_FUNC
+    EIGEN_STRONG_INLINE Tensor(const TensorBase<OtherDerived, WriteAccessors>& other)
+    {
+      typedef TensorAssignOp<Tensor, const OtherDerived> Assign;
+      Assign assign(*this, other.derived());
+      resize(TensorEvaluator<const Assign, DefaultDevice>(assign, DefaultDevice()).dimensions());
+      internal::TensorExecutor<const Assign, DefaultDevice>::run(assign, DefaultDevice());
+    }
+
+    EIGEN_DEVICE_FUNC
+    EIGEN_STRONG_INLINE Tensor& operator=(const Tensor& other)
+    {
+      typedef TensorAssignOp<Tensor, const Tensor> Assign;
+      Assign assign(*this, other);
+      resize(TensorEvaluator<const Assign, DefaultDevice>(assign, DefaultDevice()).dimensions());
+      internal::TensorExecutor<const Assign, DefaultDevice>::run(assign, DefaultDevice());
+      return *this;
+    }
+    template<typename OtherDerived>
+    EIGEN_DEVICE_FUNC
+    EIGEN_STRONG_INLINE Tensor& operator=(const OtherDerived& other)
+    {
+      typedef TensorAssignOp<Tensor, const OtherDerived> Assign;
+      Assign assign(*this, other);
+      resize(TensorEvaluator<const Assign, DefaultDevice>(assign, DefaultDevice()).dimensions());
+      internal::TensorExecutor<const Assign, DefaultDevice>::run(assign, DefaultDevice());
+      return *this;
+    }
+
+#if EIGEN_HAS_VARIADIC_TEMPLATES
+    template<typename... IndexTypes> EIGEN_DEVICE_FUNC
+    void resize(Index firstDimension, IndexTypes... otherDimensions)
+    {
+      // The number of dimensions used to resize a tensor must be equal to the rank of the tensor.
+      EIGEN_STATIC_ASSERT(sizeof...(otherDimensions) + 1 == NumIndices, YOU_MADE_A_PROGRAMMING_MISTAKE)
+      resize(array<Index, NumIndices>{{firstDimension, otherDimensions...}});
+    }
+#endif
+
+    /** Normal Dimension */
+    EIGEN_DEVICE_FUNC void resize(const array<Index, NumIndices>& dimensions)
+    {
+      int i;
+      Index size = Index(1);
+      for (i = 0; i < NumIndices; i++) {
+        internal::check_rows_cols_for_overflow<Dynamic>::run(size, dimensions[i]);
+        size *= dimensions[i];
+      }
+      #ifdef EIGEN_INITIALIZE_COEFFS
+        bool size_changed = size != this->size();
+        m_storage.resize(size, dimensions);
+        if(size_changed) EIGEN_INITIALIZE_COEFFS_IF_THAT_OPTION_IS_ENABLED
+      #else
+        m_storage.resize(size, dimensions);
+      #endif
+    }
+
+    // Why this overload, DSizes is derived from array ??? //
+    EIGEN_DEVICE_FUNC void resize(const DSizes<Index, NumIndices>& dimensions) {
+      array<Index, NumIndices> dims;
+      for (int i = 0; i < NumIndices; ++i) {
+        dims[i] = dimensions[i];
+      }
+      resize(dims);
+    }
+
+    EIGEN_DEVICE_FUNC
+    void resize()
+    {
+      EIGEN_STATIC_ASSERT(NumIndices == 0, YOU_MADE_A_PROGRAMMING_MISTAKE);
+      // Nothing to do: rank 0 tensors have fixed size
+    }
+
+    /** Custom Dimension */
+#ifdef EIGEN_HAS_SFINAE
+    template<typename CustomDimension,
+             EIGEN_SFINAE_ENABLE_IF( !(isOfNormalIndex<CustomDimension>::value) )
+    >
+    EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void resize(CustomDimension& dimensions)
+    {
+      resize(internal::customIndices2Array<Index,NumIndices>(dimensions));
+    }
+#endif
+
+#ifndef EIGEN_EMULATE_CXX11_META_H
+    template <typename std::ptrdiff_t... Indices>
+    EIGEN_DEVICE_FUNC
+    void resize(const Sizes<Indices...>& dimensions) {
+      array<Index, NumIndices> dims;
+      for (int i = 0; i < NumIndices; ++i) {
+        dims[i] = static_cast<Index>(dimensions[i]);
+      }
+      resize(dims);
+    }
+#else
+    template <std::size_t V1, std::size_t V2, std::size_t V3, std::size_t V4, std::size_t V5>
+    EIGEN_DEVICE_FUNC
+    void resize(const Sizes<V1, V2, V3, V4, V5>& dimensions) {
+      array<Index, NumIndices> dims;
+      for (int i = 0; i < NumIndices; ++i) {
+        dims[i] = static_cast<Index>(dimensions[i]);
+      }
+      resize(dims);
+    }
+#endif
+
+  protected:
+
+    bool checkIndexRange(const array<Index, NumIndices>& indices) const
+    {
+      using internal::array_apply_and_reduce;
+      using internal::array_zip_and_reduce;
+      using internal::greater_equal_zero_op;
+      using internal::logical_and_op;
+      using internal::lesser_op;
+
+      return
+        // check whether the indices are all >= 0
+        array_apply_and_reduce<logical_and_op, greater_equal_zero_op>(indices) &&
+        // check whether the indices fit in the dimensions
+        array_zip_and_reduce<logical_and_op, lesser_op>(indices, m_storage.dimensions());
+    }
+
+    EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index linearizedIndex(const array<Index, NumIndices>& indices) const
+    {
+      if (Options&RowMajor) {
+        return m_storage.dimensions().IndexOfRowMajor(indices);
+      } else {
+        return m_storage.dimensions().IndexOfColMajor(indices);
+      }
+    }
+};
+
+} // end namespace Eigen
+
+#endif // EIGEN_CXX11_TENSOR_TENSOR_H
