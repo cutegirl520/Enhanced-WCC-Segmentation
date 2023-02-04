@@ -440,4 +440,149 @@ struct TensorEvaluator<const TensorCwiseTernaryOp<TernaryOp, Arg1Type, Arg2Type,
                          typename internal::traits<Arg3Type>::Index>::value),
                         STORAGE_INDEX_MUST_MATCH)
 
-    eigen_assert(dimensions_m
+    eigen_assert(dimensions_match(m_arg1Impl.dimensions(), m_arg2Impl.dimensions()) && dimensions_match(m_arg1Impl.dimensions(), m_arg3Impl.dimensions()));
+  }
+
+  typedef typename XprType::Index Index;
+  typedef typename XprType::Scalar Scalar;
+  typedef typename internal::traits<XprType>::Scalar CoeffReturnType;
+  typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
+  static const int PacketSize = internal::unpacket_traits<PacketReturnType>::size;
+  typedef typename TensorEvaluator<Arg1Type, Device>::Dimensions Dimensions;
+
+  EIGEN_DEVICE_FUNC const Dimensions& dimensions() const
+  {
+    // TODO: use arg2 or arg3 dimensions if they are known at compile time.
+    return m_arg1Impl.dimensions();
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool evalSubExprsIfNeeded(CoeffReturnType*) {
+    m_arg1Impl.evalSubExprsIfNeeded(NULL);
+    m_arg2Impl.evalSubExprsIfNeeded(NULL);
+    m_arg3Impl.evalSubExprsIfNeeded(NULL);
+    return true;
+  }
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void cleanup() {
+    m_arg1Impl.cleanup();
+    m_arg2Impl.cleanup();
+    m_arg3Impl.cleanup();
+  }
+
+  EIGEN_DEVICE_FUNC CoeffReturnType coeff(Index index) const
+  {
+    return m_functor(m_arg1Impl.coeff(index), m_arg2Impl.coeff(index), m_arg3Impl.coeff(index));
+  }
+  template<int LoadMode>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packet(Index index) const
+  {
+    return m_functor.packetOp(m_arg1Impl.template packet<LoadMode>(index),
+                              m_arg2Impl.template packet<LoadMode>(index),
+                              m_arg3Impl.template packet<LoadMode>(index));
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorOpCost
+  costPerCoeff(bool vectorized) const {
+    const double functor_cost = internal::functor_traits<TernaryOp>::Cost;
+    return m_arg1Impl.costPerCoeff(vectorized) +
+           m_arg2Impl.costPerCoeff(vectorized) +
+           m_arg3Impl.costPerCoeff(vectorized) +
+           TensorOpCost(0, 0, functor_cost, vectorized, PacketSize);
+  }
+
+  EIGEN_DEVICE_FUNC CoeffReturnType* data() const { return NULL; }
+
+ private:
+  const TernaryOp m_functor;
+  TensorEvaluator<Arg1Type, Device> m_arg1Impl;
+  TensorEvaluator<Arg1Type, Device> m_arg2Impl;
+  TensorEvaluator<Arg3Type, Device> m_arg3Impl;
+};
+
+
+// -------------------- SelectOp --------------------
+
+template<typename IfArgType, typename ThenArgType, typename ElseArgType, typename Device>
+struct TensorEvaluator<const TensorSelectOp<IfArgType, ThenArgType, ElseArgType>, Device>
+{
+  typedef TensorSelectOp<IfArgType, ThenArgType, ElseArgType> XprType;
+  typedef typename XprType::Scalar Scalar;
+
+  enum {
+    IsAligned = TensorEvaluator<ThenArgType, Device>::IsAligned & TensorEvaluator<ElseArgType, Device>::IsAligned,
+    PacketAccess = TensorEvaluator<ThenArgType, Device>::PacketAccess & TensorEvaluator<ElseArgType, Device>::PacketAccess &
+                   internal::packet_traits<Scalar>::HasBlend,
+    Layout = TensorEvaluator<IfArgType, Device>::Layout,
+    CoordAccess = false,  // to be implemented
+    RawAccess = false
+  };
+
+  EIGEN_DEVICE_FUNC TensorEvaluator(const XprType& op, const Device& device)
+    : m_condImpl(op.ifExpression(), device),
+      m_thenImpl(op.thenExpression(), device),
+      m_elseImpl(op.elseExpression(), device)
+  {
+    EIGEN_STATIC_ASSERT((static_cast<int>(TensorEvaluator<IfArgType, Device>::Layout) == static_cast<int>(TensorEvaluator<ThenArgType, Device>::Layout)), YOU_MADE_A_PROGRAMMING_MISTAKE);
+    EIGEN_STATIC_ASSERT((static_cast<int>(TensorEvaluator<IfArgType, Device>::Layout) == static_cast<int>(TensorEvaluator<ElseArgType, Device>::Layout)), YOU_MADE_A_PROGRAMMING_MISTAKE);
+    eigen_assert(dimensions_match(m_condImpl.dimensions(), m_thenImpl.dimensions()));
+    eigen_assert(dimensions_match(m_thenImpl.dimensions(), m_elseImpl.dimensions()));
+  }
+
+  typedef typename XprType::Index Index;
+  typedef typename internal::traits<XprType>::Scalar CoeffReturnType;
+  typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
+  static const int PacketSize = internal::unpacket_traits<PacketReturnType>::size;
+  typedef typename TensorEvaluator<IfArgType, Device>::Dimensions Dimensions;
+
+  EIGEN_DEVICE_FUNC const Dimensions& dimensions() const
+  {
+    // TODO: use then or else impl instead if they happen to be known at compile time.
+    return m_condImpl.dimensions();
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool evalSubExprsIfNeeded(CoeffReturnType*) {
+    m_condImpl.evalSubExprsIfNeeded(NULL);
+    m_thenImpl.evalSubExprsIfNeeded(NULL);
+    m_elseImpl.evalSubExprsIfNeeded(NULL);
+    return true;
+  }
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void cleanup() {
+    m_condImpl.cleanup();
+    m_thenImpl.cleanup();
+    m_elseImpl.cleanup();
+  }
+
+  EIGEN_DEVICE_FUNC CoeffReturnType coeff(Index index) const
+  {
+    return m_condImpl.coeff(index) ? m_thenImpl.coeff(index) : m_elseImpl.coeff(index);
+  }
+  template<int LoadMode>
+  EIGEN_DEVICE_FUNC PacketReturnType packet(Index index) const
+  {
+    internal::Selector<PacketSize> select;
+    for (Index i = 0; i < PacketSize; ++i) {
+      select.select[i] = m_condImpl.coeff(index+i);
+    }
+    return internal::pblend(select,
+                            m_thenImpl.template packet<LoadMode>(index),
+                            m_elseImpl.template packet<LoadMode>(index));
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorOpCost
+  costPerCoeff(bool vectorized) const {
+    return m_condImpl.costPerCoeff(vectorized) +
+           m_thenImpl.costPerCoeff(vectorized)
+        .cwiseMax(m_elseImpl.costPerCoeff(vectorized));
+  }
+
+  EIGEN_DEVICE_FUNC CoeffReturnType* data() const { return NULL; }
+
+ private:
+  TensorEvaluator<IfArgType, Device> m_condImpl;
+  TensorEvaluator<ThenArgType, Device> m_thenImpl;
+  TensorEvaluator<ElseArgType, Device> m_elseImpl;
+};
+
+
+} // end namespace Eigen
+
+#endif // EIGEN_CXX11_TENSOR_TENSOR_EVALUATOR_H
