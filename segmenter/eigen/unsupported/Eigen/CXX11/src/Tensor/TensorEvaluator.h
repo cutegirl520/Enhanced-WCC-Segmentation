@@ -149,4 +149,295 @@ struct TensorEvaluator<const Derived, Device>
 
   // NumDimensions is -1 for variable dim tensors
   static const int NumCoords = internal::traits<Derived>::NumDimensions > 0 ?
-                               internal::traits<Derived>::Num
+                               internal::traits<Derived>::NumDimensions : 0;
+
+  enum {
+    IsAligned = Derived::IsAligned,
+    PacketAccess = (internal::unpacket_traits<PacketReturnType>::size > 1),
+    Layout = Derived::Layout,
+    CoordAccess = NumCoords > 0,
+    RawAccess = true
+  };
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorEvaluator(const Derived& m, const Device& device)
+      : m_data(m.data()), m_dims(m.dimensions()), m_device(device)
+  { }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const Dimensions& dimensions() const { return m_dims; }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool evalSubExprsIfNeeded(CoeffReturnType* data) {
+    if (!NumTraits<typename internal::remove_const<Scalar>::type>::RequireInitialization && data) {
+      m_device.memcpy((void*)data, m_data, m_dims.TotalSize() * sizeof(Scalar));
+      return false;
+    }
+    return true;
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void cleanup() { }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType coeff(Index index) const {
+    eigen_assert(m_data);
+    return loadConstant(m_data+index);
+  }
+
+  template<int LoadMode> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
+  PacketReturnType packet(Index index) const
+  {
+    return internal::ploadt_ro<PacketReturnType, LoadMode>(m_data + index);
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType coeff(const array<DenseIndex, NumCoords>& coords) const {
+    eigen_assert(m_data);
+    const Index index = (static_cast<int>(Layout) == static_cast<int>(ColMajor)) ? m_dims.IndexOfColMajor(coords)
+                        : m_dims.IndexOfRowMajor(coords);
+    return loadConstant(m_data+index);
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorOpCost costPerCoeff(bool vectorized) const {
+    return TensorOpCost(sizeof(CoeffReturnType), 0, 0, vectorized,
+                        internal::unpacket_traits<PacketReturnType>::size);
+  }
+
+  EIGEN_DEVICE_FUNC const Scalar* data() const { return m_data; }
+
+ protected:
+  const Scalar* m_data;
+  Dimensions m_dims;
+  const Device& m_device;
+};
+
+
+
+
+// -------------------- CwiseNullaryOp --------------------
+
+template<typename NullaryOp, typename ArgType, typename Device>
+struct TensorEvaluator<const TensorCwiseNullaryOp<NullaryOp, ArgType>, Device>
+{
+  typedef TensorCwiseNullaryOp<NullaryOp, ArgType> XprType;
+
+  enum {
+    IsAligned = true,
+    PacketAccess = internal::functor_traits<NullaryOp>::PacketAccess,
+    Layout = TensorEvaluator<ArgType, Device>::Layout,
+    CoordAccess = false,  // to be implemented
+    RawAccess = false
+  };
+
+  EIGEN_DEVICE_FUNC
+  TensorEvaluator(const XprType& op, const Device& device)
+      : m_functor(op.functor()), m_argImpl(op.nestedExpression(), device)
+  { }
+
+  typedef typename XprType::Index Index;
+  typedef typename XprType::Scalar Scalar;
+  typedef typename internal::traits<XprType>::Scalar CoeffReturnType;
+  typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
+  static const int PacketSize = internal::unpacket_traits<PacketReturnType>::size;
+  typedef typename TensorEvaluator<ArgType, Device>::Dimensions Dimensions;
+
+  EIGEN_DEVICE_FUNC const Dimensions& dimensions() const { return m_argImpl.dimensions(); }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool evalSubExprsIfNeeded(CoeffReturnType*) { return true; }
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void cleanup() { }
+
+  EIGEN_DEVICE_FUNC CoeffReturnType coeff(Index index) const
+  {
+    return m_functor(index);
+  }
+
+  template<int LoadMode>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packet(Index index) const
+  {
+    return m_functor.template packetOp<Index, PacketReturnType>(index);
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorOpCost
+  costPerCoeff(bool vectorized) const {
+    return TensorOpCost(sizeof(CoeffReturnType), 0, 0, vectorized,
+                        internal::unpacket_traits<PacketReturnType>::size);
+  }
+
+  EIGEN_DEVICE_FUNC CoeffReturnType* data() const { return NULL; }
+
+ private:
+  const NullaryOp m_functor;
+  TensorEvaluator<ArgType, Device> m_argImpl;
+};
+
+
+
+// -------------------- CwiseUnaryOp --------------------
+
+template<typename UnaryOp, typename ArgType, typename Device>
+struct TensorEvaluator<const TensorCwiseUnaryOp<UnaryOp, ArgType>, Device>
+{
+  typedef TensorCwiseUnaryOp<UnaryOp, ArgType> XprType;
+
+  enum {
+    IsAligned = TensorEvaluator<ArgType, Device>::IsAligned,
+    PacketAccess = TensorEvaluator<ArgType, Device>::PacketAccess & internal::functor_traits<UnaryOp>::PacketAccess,
+    Layout = TensorEvaluator<ArgType, Device>::Layout,
+    CoordAccess = false,  // to be implemented
+    RawAccess = false
+  };
+
+  EIGEN_DEVICE_FUNC TensorEvaluator(const XprType& op, const Device& device)
+    : m_functor(op.functor()),
+      m_argImpl(op.nestedExpression(), device)
+  { }
+
+  typedef typename XprType::Index Index;
+  typedef typename XprType::Scalar Scalar;
+  typedef typename internal::traits<XprType>::Scalar CoeffReturnType;
+  typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
+  static const int PacketSize = internal::unpacket_traits<PacketReturnType>::size;
+  typedef typename TensorEvaluator<ArgType, Device>::Dimensions Dimensions;
+
+  EIGEN_DEVICE_FUNC const Dimensions& dimensions() const { return m_argImpl.dimensions(); }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool evalSubExprsIfNeeded(Scalar*) {
+    m_argImpl.evalSubExprsIfNeeded(NULL);
+    return true;
+  }
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void cleanup() {
+    m_argImpl.cleanup();
+  }
+
+  EIGEN_DEVICE_FUNC CoeffReturnType coeff(Index index) const
+  {
+    return m_functor(m_argImpl.coeff(index));
+  }
+
+  template<int LoadMode>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packet(Index index) const
+  {
+    return m_functor.packetOp(m_argImpl.template packet<LoadMode>(index));
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorOpCost costPerCoeff(bool vectorized) const {
+    const double functor_cost = internal::functor_traits<UnaryOp>::Cost;
+    return m_argImpl.costPerCoeff(vectorized) +
+        TensorOpCost(0, 0, functor_cost, vectorized, PacketSize);
+  }
+
+  EIGEN_DEVICE_FUNC CoeffReturnType* data() const { return NULL; }
+
+ private:
+  const UnaryOp m_functor;
+  TensorEvaluator<ArgType, Device> m_argImpl;
+};
+
+
+// -------------------- CwiseBinaryOp --------------------
+
+template<typename BinaryOp, typename LeftArgType, typename RightArgType, typename Device>
+struct TensorEvaluator<const TensorCwiseBinaryOp<BinaryOp, LeftArgType, RightArgType>, Device>
+{
+  typedef TensorCwiseBinaryOp<BinaryOp, LeftArgType, RightArgType> XprType;
+
+  enum {
+    IsAligned = TensorEvaluator<LeftArgType, Device>::IsAligned & TensorEvaluator<RightArgType, Device>::IsAligned,
+    PacketAccess = TensorEvaluator<LeftArgType, Device>::PacketAccess & TensorEvaluator<RightArgType, Device>::PacketAccess &
+                   internal::functor_traits<BinaryOp>::PacketAccess,
+    Layout = TensorEvaluator<LeftArgType, Device>::Layout,
+    CoordAccess = false,  // to be implemented
+    RawAccess = false
+  };
+
+  EIGEN_DEVICE_FUNC TensorEvaluator(const XprType& op, const Device& device)
+    : m_functor(op.functor()),
+      m_leftImpl(op.lhsExpression(), device),
+      m_rightImpl(op.rhsExpression(), device)
+  {
+    EIGEN_STATIC_ASSERT((static_cast<int>(TensorEvaluator<LeftArgType, Device>::Layout) == static_cast<int>(TensorEvaluator<RightArgType, Device>::Layout) || internal::traits<XprType>::NumDimensions <= 1), YOU_MADE_A_PROGRAMMING_MISTAKE);
+    eigen_assert(dimensions_match(m_leftImpl.dimensions(), m_rightImpl.dimensions()));
+  }
+
+  typedef typename XprType::Index Index;
+  typedef typename XprType::Scalar Scalar;
+  typedef typename internal::traits<XprType>::Scalar CoeffReturnType;
+  typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
+  static const int PacketSize = internal::unpacket_traits<PacketReturnType>::size;
+  typedef typename TensorEvaluator<LeftArgType, Device>::Dimensions Dimensions;
+
+  EIGEN_DEVICE_FUNC const Dimensions& dimensions() const
+  {
+    // TODO: use right impl instead if right impl dimensions are known at compile time.
+    return m_leftImpl.dimensions();
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool evalSubExprsIfNeeded(CoeffReturnType*) {
+    m_leftImpl.evalSubExprsIfNeeded(NULL);
+    m_rightImpl.evalSubExprsIfNeeded(NULL);
+    return true;
+  }
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void cleanup() {
+    m_leftImpl.cleanup();
+    m_rightImpl.cleanup();
+  }
+
+  EIGEN_DEVICE_FUNC CoeffReturnType coeff(Index index) const
+  {
+    return m_functor(m_leftImpl.coeff(index), m_rightImpl.coeff(index));
+  }
+  template<int LoadMode>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packet(Index index) const
+  {
+    return m_functor.packetOp(m_leftImpl.template packet<LoadMode>(index), m_rightImpl.template packet<LoadMode>(index));
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorOpCost
+  costPerCoeff(bool vectorized) const {
+    const double functor_cost = internal::functor_traits<BinaryOp>::Cost;
+    return m_leftImpl.costPerCoeff(vectorized) +
+           m_rightImpl.costPerCoeff(vectorized) +
+           TensorOpCost(0, 0, functor_cost, vectorized, PacketSize);
+  }
+
+  EIGEN_DEVICE_FUNC CoeffReturnType* data() const { return NULL; }
+
+ private:
+  const BinaryOp m_functor;
+  TensorEvaluator<LeftArgType, Device> m_leftImpl;
+  TensorEvaluator<RightArgType, Device> m_rightImpl;
+};
+
+// -------------------- CwiseTernaryOp --------------------
+
+template<typename TernaryOp, typename Arg1Type, typename Arg2Type, typename Arg3Type, typename Device>
+struct TensorEvaluator<const TensorCwiseTernaryOp<TernaryOp, Arg1Type, Arg2Type, Arg3Type>, Device>
+{
+  typedef TensorCwiseTernaryOp<TernaryOp, Arg1Type, Arg2Type, Arg3Type> XprType;
+
+  enum {
+    IsAligned = TensorEvaluator<Arg1Type, Device>::IsAligned & TensorEvaluator<Arg2Type, Device>::IsAligned & TensorEvaluator<Arg3Type, Device>::IsAligned,
+    PacketAccess = TensorEvaluator<Arg1Type, Device>::PacketAccess & TensorEvaluator<Arg2Type, Device>::PacketAccess & TensorEvaluator<Arg3Type, Device>::PacketAccess &
+                   internal::functor_traits<TernaryOp>::PacketAccess,
+    Layout = TensorEvaluator<Arg1Type, Device>::Layout,
+    CoordAccess = false,  // to be implemented
+    RawAccess = false
+  };
+
+  EIGEN_DEVICE_FUNC TensorEvaluator(const XprType& op, const Device& device)
+    : m_functor(op.functor()),
+      m_arg1Impl(op.arg1Expression(), device),
+      m_arg2Impl(op.arg2Expression(), device),
+      m_arg3Impl(op.arg3Expression(), device)
+  {
+    EIGEN_STATIC_ASSERT((static_cast<int>(TensorEvaluator<Arg1Type, Device>::Layout) == static_cast<int>(TensorEvaluator<Arg3Type, Device>::Layout) || internal::traits<XprType>::NumDimensions <= 1), YOU_MADE_A_PROGRAMMING_MISTAKE);
+
+    EIGEN_STATIC_ASSERT((internal::is_same<typename internal::traits<Arg1Type>::StorageKind,
+                         typename internal::traits<Arg2Type>::StorageKind>::value),
+                        STORAGE_KIND_MUST_MATCH)
+    EIGEN_STATIC_ASSERT((internal::is_same<typename internal::traits<Arg1Type>::StorageKind,
+                         typename internal::traits<Arg3Type>::StorageKind>::value),
+                        STORAGE_KIND_MUST_MATCH)
+    EIGEN_STATIC_ASSERT((internal::is_same<typename internal::traits<Arg1Type>::Index,
+                         typename internal::traits<Arg2Type>::Index>::value),
+                        STORAGE_INDEX_MUST_MATCH)
+    EIGEN_STATIC_ASSERT((internal::is_same<typename internal::traits<Arg1Type>::Index,
+                         typename internal::traits<Arg3Type>::Index>::value),
+                        STORAGE_INDEX_MUST_MATCH)
+
+    eigen_assert(dimensions_m
