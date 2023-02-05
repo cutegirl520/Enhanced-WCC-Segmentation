@@ -347,3 +347,51 @@ struct TensorEvaluator<const TensorPaddingOp<PaddingDimensions, ArgType>, Device
       }
     }
 
+    const Index last = index + PacketSize - 1;
+    const Index first = index;
+    const Index lastPaddedLeft = m_padding[NumDims-1].first;
+    const Index firstPaddedRight = (m_dimensions[NumDims-1] - m_padding[NumDims-1].second);
+    const Index lastPaddedRight = m_outputStrides[NumDims-1];
+
+    if (!isLeftPaddingCompileTimeZero(NumDims-1) && last < lastPaddedLeft) {
+      // all the coefficient are in the padding zone.
+      return internal::pset1<PacketReturnType>(m_paddingValue);
+    }
+    else if (!isRightPaddingCompileTimeZero(NumDims-1) && first >= firstPaddedRight && last < lastPaddedRight) {
+      // all the coefficient are in the padding zone.
+      return internal::pset1<PacketReturnType>(m_paddingValue);
+    }
+    else if ((isLeftPaddingCompileTimeZero(NumDims-1) && isRightPaddingCompileTimeZero(NumDims-1)) || (first >= lastPaddedLeft && last < firstPaddedRight)) {
+      // all the coefficient are between the 2 padding zones.
+      inputIndex += (index - m_padding[NumDims-1].first);
+      return m_impl.template packet<Unaligned>(inputIndex);
+    }
+    // Every other case
+    return packetWithPossibleZero(initialIndex);
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packetWithPossibleZero(Index index) const
+  {
+    EIGEN_ALIGN_MAX typename internal::remove_const<CoeffReturnType>::type values[PacketSize];
+    for (int i = 0; i < PacketSize; ++i) {
+      values[i] = coeff(index+i);
+    }
+    PacketReturnType rslt = internal::pload<PacketReturnType>(values);
+    return rslt;
+  }
+
+  Dimensions m_dimensions;
+  array<Index, NumDims+1> m_outputStrides;
+  array<Index, NumDims> m_inputStrides;
+  TensorEvaluator<ArgType, Device> m_impl;
+  PaddingDimensions m_padding;
+
+  Scalar m_paddingValue;
+};
+
+
+
+
+} // end namespace Eigen
+
+#endif // EIGEN_CXX11_TENSOR_TENSOR_PADDING_H
