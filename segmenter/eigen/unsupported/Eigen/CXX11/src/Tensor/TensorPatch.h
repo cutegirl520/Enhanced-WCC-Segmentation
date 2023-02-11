@@ -234,4 +234,36 @@ struct TensorEvaluator<const TensorPatchOp<PatchDim, ArgType>, Device>
       return rslt;
     }
     else {
-      EIGEN_ALIGN_MAX CoeffReturnType valu
+      EIGEN_ALIGN_MAX CoeffReturnType values[PacketSize];
+      values[0] = m_impl.coeff(inputIndices[0]);
+      values[PacketSize-1] = m_impl.coeff(inputIndices[1]);
+      for (int i = 1; i < PacketSize-1; ++i) {
+        values[i] = coeff(index+i);
+      }
+      PacketReturnType rslt = internal::pload<PacketReturnType>(values);
+      return rslt;
+    }
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorOpCost costPerCoeff(bool vectorized) const {
+    const double compute_cost = NumDims * (TensorOpCost::DivCost<Index>() +
+                                           TensorOpCost::MulCost<Index>() +
+                                           2 * TensorOpCost::AddCost<Index>());
+    return m_impl.costPerCoeff(vectorized) +
+           TensorOpCost(0, 0, compute_cost, vectorized, PacketSize);
+  }
+
+  EIGEN_DEVICE_FUNC Scalar* data() const { return NULL; }
+
+ protected:
+  Dimensions m_dimensions;
+  array<Index, NumDims> m_outputStrides;
+  array<Index, NumDims-1> m_inputStrides;
+  array<Index, NumDims-1> m_patchStrides;
+
+  TensorEvaluator<ArgType, Device> m_impl;
+};
+
+} // end namespace Eigen
+
+#endif // EIGEN_CXX11_TENSOR_TENSOR_PATCH_H
