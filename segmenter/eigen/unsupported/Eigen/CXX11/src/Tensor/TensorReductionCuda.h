@@ -552,4 +552,184 @@ struct InnerReductionLauncher<Self, Op, float, PacketAccess> {
                            device.maxCudaThreadsPerMultiProcessor() / 1024;
       const int num_blocks = numext::mini<int>(max_blocks, dyn_blocks);
       LAUNCH_CUDA_KERNEL((ReductionInitKernel<float, Index>),
-                         num_blocks, 1024, 0, device, redu
+                         num_blocks, 1024, 0, device, reducer.initialize(),
+                         num_preserved_vals, output);
+    }
+
+    LAUNCH_CUDA_KERNEL((InnerReductionKernel<num_per_thread, Self, Op, Index>),
+                       num_blocks, block_size, 0, device, reducer, self, num_coeffs_to_reduce, num_preserved_vals, output);
+
+    return false;
+  }
+};
+
+#ifdef EIGEN_HAS_CUDA_FP16
+template <typename Self, typename Op>
+struct InnerReductionLauncher<Self, Op, Eigen::half, false> {
+  static bool run(const Self&, Op&, const GpuDevice&, half*, typename Self::Index, typename Self::Index) {
+    assert(false && "Should not be called since there is no packet accessor");
+    return true;
+  }
+};
+
+template <typename Self, typename Op>
+struct InnerReductionLauncher<Self, Op, Eigen::half, true> {
+  static bool run(const Self& self, Op& reducer, const GpuDevice& device, half* output, typename Self::Index num_coeffs_to_reduce, typename Self::Index num_preserved_vals) {
+    typedef typename Self::Index Index;
+
+    if (num_preserved_vals % 2 != 0) {
+      // Not supported yet, revert to the slower code path
+      return true;
+    }
+
+    const Index num_coeffs = num_coeffs_to_reduce * num_preserved_vals;
+    const int block_size = /*256*/128;
+    const int num_per_thread = /*128*/64;
+    const int dyn_blocks = divup<int>(num_coeffs, block_size * num_per_thread);
+    const int max_blocks = device.getNumCudaMultiProcessors() *
+                           device.maxCudaThreadsPerMultiProcessor() / block_size;
+    const int num_blocks = numext::mini<int>(max_blocks, dyn_blocks);
+
+    if (num_blocks > 1) {
+      // We initialize the outputs outside the reduction kernel when we can't be sure that there
+      // won't be a race conditions between multiple thread blocks.
+      const int dyn_blocks = divup<int>(num_preserved_vals, 1024);
+      const int max_blocks = device.getNumCudaMultiProcessors() *
+                           device.maxCudaThreadsPerMultiProcessor() / 1024;
+      const int num_blocks = numext::mini<int>(max_blocks, dyn_blocks);
+      LAUNCH_CUDA_KERNEL((ReductionInitKernelHalfFloat<Self, Op, Index>),
+                         1, 1, 0, device, reducer, self, num_preserved_vals, output);
+    }
+
+    LAUNCH_CUDA_KERNEL((InnerReductionKernelHalfFloat<num_per_thread, Self, Op, Index>),
+                       num_blocks, block_size, 0, device, reducer, self, num_coeffs_to_reduce, num_preserved_vals, output);
+
+    return false;
+  }
+};
+#endif
+
+
+template <typename Self, typename Op>
+struct InnerReducer<Self, Op, GpuDevice> {
+  // Unfortunately nvidia doesn't support well exotic types such as complex,
+  // so reduce the scope of the optimized version of the code to the simple case
+  // of floats and half floats.
+#ifdef EIGEN_HAS_CUDA_FP16
+  static const bool HasOptimizedImplementation = !Op::IsStateful &&
+      (internal::is_same<typename Self::CoeffReturnType, float>::value ||
+       (internal::is_same<typename Self::CoeffReturnType, Eigen::half>::value && reducer_traits<Op, GpuDevice>::PacketAccess));
+#elif __CUDA_ARCH__ >= 300
+  static const bool HasOptimizedImplementation = !Op::IsStateful &&
+                                                 internal::is_same<typename Self::CoeffReturnType, float>::value;
+#else
+  static const bool HasOptimizedImplementation = false;
+#endif
+
+  template <typename OutputType>
+  static bool run(const Self& self, Op& reducer, const GpuDevice& device, OutputType* output, typename Self::Index num_coeffs_to_reduce, typename Self::Index num_preserved_vals) {
+    assert(HasOptimizedImplementation && "Should only be called on floats or half floats");
+    const Index num_coeffs = array_prod(self.m_impl.dimensions());
+    // Don't crash when we're called with an input tensor of size 0.
+    if (num_coeffs == 0) {
+      return true;
+    }
+    // It's faster to use the usual code.
+    if (num_coeffs_to_reduce <= 128) {
+      return true;
+    }
+
+    return InnerReductionLauncher<Self, Op, OutputType, reducer_traits<Op, GpuDevice>::PacketAccess>::run(self, reducer, device, output, num_coeffs_to_reduce, num_preserved_vals);
+  }
+};
+
+template <int NumPerThread, typename Self,
+          typename Reducer, typename Index>
+__global__ void OuterReductionKernel(Reducer reducer, const Self input, Index num_coeffs_to_reduce, Index num_preserved_coeffs,
+                                     typename Self::CoeffReturnType* output) {
+  const Index num_threads = blockDim.x * gridDim.x;
+  const Index thread_id = blockIdx.x * blockDim.x + threadIdx.x;
+  // Initialize the output values if they weren't initialized by the ReductionInitKernel
+  if (gridDim.x == 1) {
+    for (Index i = thread_id; i < num_preserved_coeffs; i += num_threads) {
+      output[i] = reducer.initialize();
+    }
+    __syncthreads();
+  }
+
+  // Do the reduction.
+  const Index max_iter = num_preserved_coeffs * divup<Index>(num_coeffs_to_reduce, NumPerThread);
+  for (Index i = thread_id; i < max_iter; i += num_threads) {
+    const Index input_col = i % num_preserved_coeffs;
+    const Index input_row = (i / num_preserved_coeffs) * NumPerThread;
+    typename Self::CoeffReturnType reduced_val = reducer.initialize();
+    const Index max_row = numext::mini(input_row + NumPerThread, num_coeffs_to_reduce);
+    for (Index j = input_row; j < max_row; j++) {
+      typename Self::CoeffReturnType val = input.m_impl.coeff(j * num_preserved_coeffs + input_col);
+      reducer.reduce(val, &reduced_val);
+    }
+    atomicReduce(&(output[input_col]), reduced_val, reducer);
+  }
+}
+
+
+template <typename Self, typename Op>
+struct OuterReducer<Self, Op, GpuDevice> {
+  // Unfortunately nvidia doesn't support well exotic types such as complex,
+  // so reduce the scope of the optimized version of the code to the simple case
+  // of floats.
+#if __CUDA_ARCH__ >= 300
+  static const bool HasOptimizedImplementation = !Op::IsStateful &&
+                                                 internal::is_same<typename Self::CoeffReturnType, float>::value;
+#else
+  static const bool HasOptimizedImplementation = false;
+#endif
+
+  template <typename Device, typename OutputType>
+  static EIGEN_DEVICE_FUNC bool run(const Self&, Op&, const Device&, OutputType*, typename Self::Index, typename Self::Index) {
+    assert(false && "Should only be called to reduce floats on a gpu device");
+    return true;
+  }
+
+  static bool run(const Self& self, Op& reducer, const GpuDevice& device, float* output, typename Self::Index num_coeffs_to_reduce, typename Self::Index num_preserved_vals) {
+    typedef typename Self::Index Index;
+
+    // It's faster to use the usual code.
+    if (num_coeffs_to_reduce <= 32) {
+      return true;
+    }
+
+    const Index num_coeffs = num_coeffs_to_reduce * num_preserved_vals;
+    const int block_size = 256;
+    const int num_per_thread = 16;
+    const int dyn_blocks = divup<int>(num_coeffs, block_size * num_per_thread);
+    const int max_blocks = device.getNumCudaMultiProcessors() *
+                           device.maxCudaThreadsPerMultiProcessor() / block_size;
+    const int num_blocks = numext::mini<int>(max_blocks, dyn_blocks);
+
+    if (num_blocks > 1) {
+      // We initialize the outputs in the reduction kernel itself when we don't have to worry
+      // about race conditions between multiple thread blocks.
+      const int dyn_blocks = divup<int>(num_preserved_vals, 1024);
+      const int max_blocks = device.getNumCudaMultiProcessors() *
+                             device.maxCudaThreadsPerMultiProcessor() / 1024;
+      const int num_blocks = numext::mini<int>(max_blocks, dyn_blocks);
+      LAUNCH_CUDA_KERNEL((ReductionInitKernel<float, Index>),
+                         num_blocks, 1024, 0, device, reducer.initialize(),
+                         num_preserved_vals, output);
+    }
+
+    LAUNCH_CUDA_KERNEL((OuterReductionKernel<num_per_thread, Self, Op, Index>),
+                       num_blocks, block_size, 0, device, reducer, self, num_coeffs_to_reduce, num_preserved_vals, output);
+
+    return false;
+  }
+};
+
+#endif
+
+
+} // end namespace internal
+} // end namespace Eigen
+
+#endif // EIGEN_CXX11_TENSOR_TENSOR_REDUCTION_CUDA_H
