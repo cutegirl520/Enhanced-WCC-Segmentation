@@ -136,3 +136,127 @@ template<typename PlainObjectType, int Options>
 struct eval<TensorMap<PlainObjectType, Options>, Eigen::Dense>
 {
   typedef const TensorMap<PlainObjectType, Options>& type;
+};
+
+template<typename PlainObjectType, int Options>
+struct eval<const TensorMap<PlainObjectType, Options>, Eigen::Dense>
+{
+  typedef const TensorMap<PlainObjectType, Options>& type;
+};
+
+template<typename PlainObjectType>
+struct eval<TensorRef<PlainObjectType>, Eigen::Dense>
+{
+  typedef const TensorRef<PlainObjectType>& type;
+};
+
+template<typename PlainObjectType>
+struct eval<const TensorRef<PlainObjectType>, Eigen::Dense>
+{
+  typedef const TensorRef<PlainObjectType>& type;
+};
+
+// TODO nested<> does not exist anymore in Eigen/Core, and it thus has to be removed in favor of ref_selector.
+template<typename T, int n=1, typename PlainObject = void> struct nested
+{
+  typedef typename ref_selector<T>::type type;
+};
+
+template <typename Scalar_, int NumIndices_, int Options_, typename IndexType_>
+struct nested<Tensor<Scalar_, NumIndices_, Options_, IndexType_> >
+{
+  typedef const Tensor<Scalar_, NumIndices_, Options_, IndexType_>& type;
+};
+
+template <typename Scalar_, int NumIndices_, int Options_, typename IndexType_>
+struct nested<const Tensor<Scalar_, NumIndices_, Options_, IndexType_> >
+{
+  typedef const Tensor<Scalar_, NumIndices_, Options_, IndexType_>& type;
+};
+
+template <typename Scalar_, typename Dimensions, int Options, typename IndexType_>
+struct nested<TensorFixedSize<Scalar_, Dimensions, Options, IndexType_> >
+{
+  typedef const TensorFixedSize<Scalar_, Dimensions, Options, IndexType_>& type;
+};
+
+template <typename Scalar_, typename Dimensions, int Options, typename IndexType_>
+struct nested<const TensorFixedSize<Scalar_, Dimensions, Options, IndexType_> >
+{
+  typedef const TensorFixedSize<Scalar_, Dimensions, Options, IndexType_>& type;
+};
+
+
+template <typename PlainObjectType, int Options>
+struct nested<TensorMap<PlainObjectType, Options> >
+{
+  typedef const TensorMap<PlainObjectType, Options>& type;
+};
+
+template <typename PlainObjectType, int Options>
+struct nested<const TensorMap<PlainObjectType, Options> >
+{
+  typedef const TensorMap<PlainObjectType, Options>& type;
+};
+
+template <typename PlainObjectType>
+struct nested<TensorRef<PlainObjectType> >
+{
+  typedef const TensorRef<PlainObjectType>& type;
+};
+
+template <typename PlainObjectType>
+struct nested<const TensorRef<PlainObjectType> >
+{
+  typedef const TensorRef<PlainObjectType>& type;
+};
+
+}  // end namespace internal
+
+// Convolutional layers take in an input tensor of shape (D, R, C, B), or (D, C,
+// R, B), and convolve it with a set of filters, which can also be presented as
+// a tensor (D, K, K, M), where M is the number of filters, K is the filter
+// size, and each 3-dimensional tensor of size (D, K, K) is a filter. For
+// simplicity we assume that we always use square filters (which is usually the
+// case in images), hence the two Ks in the tensor dimension.  It also takes in
+// a few additional parameters:
+// Stride (S): The convolution stride is the offset between locations where we
+//             apply the filters.  A larger stride means that the output will be
+//             spatially smaller.
+// Padding (P): The padding we apply to the input tensor along the R and C
+//              dimensions.  This is usually used to make sure that the spatial
+//              dimensions of the output matches our intention.
+//
+// Two types of padding are often used:
+//   SAME: The pad value is computed so that the output will have size
+//         R/S and C/S.
+//   VALID: no padding is carried out.
+// When we do padding, the padded values at the padded locations are usually
+// zero.
+//
+// The output dimensions for convolution, when given all the parameters above,
+// are as follows:
+// When Padding = SAME: the output size is (B, R', C', M), where
+//   R' = ceil(float(R) / float(S))
+//   C' = ceil(float(C) / float(S))
+// where ceil is the ceiling function.  The input tensor is padded with 0 as
+// needed.  The number of padded rows and columns are computed as:
+//   Pr = ((R' - 1) * S + K - R) / 2
+//   Pc = ((C' - 1) * S + K - C) / 2
+// when the stride is 1, we have the simplified case R'=R, C'=C, Pr=Pc=(K-1)/2.
+// This is where SAME comes from - the output has the same size as the input has.
+// When Padding = VALID: the output size is computed as
+//   R' = ceil(float(R - K + 1) / float(S))
+//   C' = ceil(float(C - K + 1) / float(S))
+// and the number of padded rows and columns are computed in the same way as in
+// the SAME case.
+// When the stride is 1, we have the simplified case R'=R-K+1, C'=C-K+1, Pr=0,
+// Pc=0.
+typedef enum {
+  PADDING_VALID = 1,
+  PADDING_SAME = 2
+} PaddingType;
+
+}  // end namespace Eigen
+
+#endif // EIGEN_CXX11_TENSOR_TENSOR_TRAITS_H
