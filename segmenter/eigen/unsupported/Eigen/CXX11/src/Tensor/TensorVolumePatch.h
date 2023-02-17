@@ -308,4 +308,266 @@ struct TensorEvaluator<const TensorVolumePatchOp<Planes, Rows, Cols, ArgType>, D
     } else {
       m_rowStride = m_dimensions[NumDims-2];
       m_colStride = m_dimensions[NumDims-3] * m_rowStride;
-      m_patchStride = m_colStride * m
+      m_patchStride = m_colStride * m_dimensions[NumDims-4] * m_dimensions[NumDims-1];
+      m_otherStride = m_patchStride * m_dimensions[NumDims-5];
+    }
+
+    // Strides for navigating through the input tensor.
+    m_planeInputStride = m_inputDepth;
+    m_rowInputStride = m_inputDepth * m_inputPlanes;
+    m_colInputStride = m_inputDepth * m_inputRows * m_inputPlanes;
+    m_otherInputStride = m_inputDepth * m_inputRows * m_inputCols * m_inputPlanes;
+
+    m_outputPlanesRows = m_outputPlanes * m_outputRows;
+
+    // Fast representations of different variables.
+    m_fastOtherStride = internal::TensorIntDivisor<Index>(m_otherStride);
+    m_fastPatchStride = internal::TensorIntDivisor<Index>(m_patchStride);
+    m_fastColStride = internal::TensorIntDivisor<Index>(m_colStride);
+    m_fastRowStride = internal::TensorIntDivisor<Index>(m_rowStride);
+    m_fastInputRowStride = internal::TensorIntDivisor<Index>(m_row_inflate_strides);
+    m_fastInputColStride = internal::TensorIntDivisor<Index>(m_col_inflate_strides);
+    m_fastInputPlaneStride = internal::TensorIntDivisor<Index>(m_plane_inflate_strides);
+    m_fastInputColsEff = internal::TensorIntDivisor<Index>(m_input_cols_eff);
+    m_fastOutputPlanes = internal::TensorIntDivisor<Index>(m_outputPlanes);
+    m_fastOutputPlanesRows = internal::TensorIntDivisor<Index>(m_outputPlanesRows);
+
+    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      m_fastOutputDepth = internal::TensorIntDivisor<Index>(m_dimensions[0]);
+    } else {
+      m_fastOutputDepth = internal::TensorIntDivisor<Index>(m_dimensions[NumDims-1]);
+    }
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const Dimensions& dimensions() const { return m_dimensions; }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool evalSubExprsIfNeeded(Scalar* /*data*/) {
+    m_impl.evalSubExprsIfNeeded(NULL);
+    return true;
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void cleanup() {
+    m_impl.cleanup();
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType coeff(Index index) const
+  {
+    // Patch index corresponding to the passed in index.
+    const Index patchIndex = index / m_fastPatchStride;
+
+    // Spatial offset within the patch. This has to be translated into 3D
+    // coordinates within the patch.
+    const Index patchOffset = (index - patchIndex * m_patchStride) / m_fastOutputDepth;
+
+    // Batch, etc.
+    const Index otherIndex = (NumDims == 5) ? 0 : index / m_fastOtherStride;
+    const Index patch3DIndex = (NumDims == 5) ? patchIndex : (index - otherIndex * m_otherStride) / m_fastPatchStride;
+
+    // Calculate column index in the input original tensor.
+    const Index colIndex = patch3DIndex / m_fastOutputPlanesRows;
+    const Index colOffset = patchOffset / m_fastColStride;
+    const Index inputCol = colIndex * m_col_strides + colOffset * m_in_col_strides - m_colPaddingLeft;
+    const Index origInputCol = (m_col_inflate_strides == 1) ? inputCol : ((inputCol >= 0) ? (inputCol / m_fastInputColStride) : 0);
+    if (inputCol < 0 || inputCol >= m_input_cols_eff ||
+        ((m_col_inflate_strides != 1) && (inputCol != origInputCol * m_col_inflate_strides))) {
+      return Scalar(m_paddingValue);
+    }
+
+    // Calculate row index in the original input tensor.
+    const Index rowIndex = (patch3DIndex - colIndex * m_outputPlanesRows) / m_fastOutputPlanes;
+    const Index rowOffset = (patchOffset - colOffset * m_colStride) / m_fastRowStride;
+    const Index inputRow = rowIndex * m_row_strides + rowOffset * m_in_row_strides - m_rowPaddingTop;
+    const Index origInputRow = (m_row_inflate_strides == 1) ? inputRow : ((inputRow >= 0) ? (inputRow / m_fastInputRowStride) : 0);
+    if (inputRow < 0 || inputRow >= m_input_rows_eff ||
+        ((m_row_inflate_strides != 1) && (inputRow != origInputRow * m_row_inflate_strides))) {
+      return Scalar(m_paddingValue);
+    }
+
+    // Calculate plane index in the original input tensor.
+    const Index planeIndex = (patch3DIndex - m_outputPlanes * (colIndex * m_outputRows + rowIndex));
+    const Index planeOffset = patchOffset - colOffset * m_colStride - rowOffset * m_rowStride;
+    const Index inputPlane = planeIndex * m_plane_strides + planeOffset * m_in_plane_strides - m_planePaddingTop;
+    const Index origInputPlane = (m_plane_inflate_strides == 1) ? inputPlane : ((inputPlane >= 0) ? (inputPlane / m_fastInputPlaneStride) : 0);
+    if (inputPlane < 0 || inputPlane >= m_input_planes_eff ||
+        ((m_plane_inflate_strides != 1) && (inputPlane != origInputPlane * m_plane_inflate_strides))) {
+      return Scalar(m_paddingValue);
+    }
+
+    const int depth_index = static_cast<int>(Layout) == static_cast<int>(ColMajor) ? 0 : NumDims - 1;
+    const Index depth = index - (index / m_fastOutputDepth) * m_dimensions[depth_index];
+
+    const Index inputIndex = depth +
+        origInputRow * m_rowInputStride +
+        origInputCol * m_colInputStride +
+        origInputPlane * m_planeInputStride +
+        otherIndex * m_otherInputStride;
+
+    return m_impl.coeff(inputIndex);
+  }
+
+  template<int LoadMode>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packet(Index index) const
+  {
+    EIGEN_STATIC_ASSERT((PacketSize > 1), YOU_MADE_A_PROGRAMMING_MISTAKE)
+    eigen_assert(index+PacketSize-1 < dimensions().TotalSize());
+
+    if (m_in_row_strides != 1 || m_in_col_strides != 1 || m_row_inflate_strides != 1 || m_col_inflate_strides != 1 ||
+        m_in_plane_strides != 1 || m_plane_inflate_strides != 1) {
+      return packetWithPossibleZero(index);
+    }
+
+    const Index indices[2] = {index, index + PacketSize - 1};
+    const Index patchIndex = indices[0] / m_fastPatchStride;
+    if (patchIndex != indices[1] / m_fastPatchStride) {
+      return packetWithPossibleZero(index);
+    }
+    const Index otherIndex = (NumDims == 5) ? 0 : indices[0] / m_fastOtherStride;
+    eigen_assert(otherIndex == indices[1] / m_fastOtherStride);
+
+    // Find the offset of the element wrt the location of the first element.
+    const Index patchOffsets[2] = {(indices[0] - patchIndex * m_patchStride) / m_fastOutputDepth,
+                                   (indices[1] - patchIndex * m_patchStride) / m_fastOutputDepth};
+
+    const Index patch3DIndex = (NumDims == 5) ? patchIndex : (indices[0] - otherIndex * m_otherStride) / m_fastPatchStride;
+    eigen_assert(patch3DIndex == (indices[1] - otherIndex * m_otherStride) / m_fastPatchStride);
+
+    const Index colIndex = patch3DIndex / m_fastOutputPlanesRows;
+    const Index colOffsets[2] = {
+      patchOffsets[0] / m_fastColStride,
+      patchOffsets[1] / m_fastColStride};
+
+    // Calculate col indices in the original input tensor.
+    const Index inputCols[2] = {
+      colIndex * m_col_strides + colOffsets[0] - m_colPaddingLeft,
+      colIndex * m_col_strides + colOffsets[1] - m_colPaddingLeft};
+    if (inputCols[1] < 0 || inputCols[0] >= m_inputCols) {
+      return internal::pset1<PacketReturnType>(Scalar(m_paddingValue));
+    }
+
+    if (inputCols[0] != inputCols[1]) {
+      return packetWithPossibleZero(index);
+    }
+
+    const Index rowIndex = (patch3DIndex - colIndex * m_outputPlanesRows) / m_fastOutputPlanes;
+    const Index rowOffsets[2] = {
+      (patchOffsets[0] - colOffsets[0] * m_colStride) / m_fastRowStride,
+      (patchOffsets[1] - colOffsets[1] * m_colStride) / m_fastRowStride};
+    eigen_assert(rowOffsets[0] <= rowOffsets[1]);
+    // Calculate col indices in the original input tensor.
+    const Index inputRows[2] = {
+      rowIndex * m_row_strides + rowOffsets[0] - m_rowPaddingTop,
+      rowIndex * m_row_strides + rowOffsets[1] - m_rowPaddingTop};
+
+    if (inputRows[1] < 0 || inputRows[0] >= m_inputRows) {
+      return internal::pset1<PacketReturnType>(Scalar(m_paddingValue));
+    }
+
+    if (inputRows[0] != inputRows[1]) {
+      return packetWithPossibleZero(index);
+    }
+
+    const Index planeIndex = (patch3DIndex - m_outputPlanes * (colIndex * m_outputRows + rowIndex));
+    const Index planeOffsets[2] = {
+      patchOffsets[0] - colOffsets[0] * m_colStride - rowOffsets[0] * m_rowStride,
+      patchOffsets[1] - colOffsets[1] * m_colStride - rowOffsets[1] * m_rowStride};
+    eigen_assert(planeOffsets[0] <= planeOffsets[1]);
+    const Index inputPlanes[2] = {
+      planeIndex * m_plane_strides + planeOffsets[0] - m_planePaddingTop,
+      planeIndex * m_plane_strides + planeOffsets[1] - m_planePaddingTop};
+
+    if (inputPlanes[1] < 0 || inputPlanes[0] >= m_inputPlanes) {
+      return internal::pset1<PacketReturnType>(Scalar(m_paddingValue));
+    }
+
+    if (inputPlanes[0] >= 0 && inputPlanes[1] < m_inputPlanes) {
+      // no padding
+      const int depth_index = static_cast<int>(Layout) == static_cast<int>(ColMajor) ? 0 : NumDims - 1;
+      const Index depth = index - (index / m_fastOutputDepth) * m_dimensions[depth_index];
+      const Index inputIndex = depth +
+          inputRows[0] * m_rowInputStride +
+          inputCols[0] * m_colInputStride +
+          m_planeInputStride * inputPlanes[0] +
+          otherIndex * m_otherInputStride;
+      return m_impl.template packet<Unaligned>(inputIndex);
+    }
+
+    return packetWithPossibleZero(index);
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorOpCost
+  costPerCoeff(bool vectorized) const {
+    const double compute_cost =
+        10 * TensorOpCost::DivCost<Index>() + 21 * TensorOpCost::MulCost<Index>() +
+        8 * TensorOpCost::AddCost<Index>();
+    return TensorOpCost(0, 0, compute_cost, vectorized, PacketSize);
+  }
+
+  EIGEN_DEVICE_FUNC Scalar* data() const { return NULL; }
+
+  const TensorEvaluator<ArgType, Device>& impl() const { return m_impl; }
+
+  Index planePaddingTop() const { return m_planePaddingTop; }
+  Index rowPaddingTop() const { return m_rowPaddingTop; }
+  Index colPaddingLeft() const { return m_colPaddingLeft; }
+  Index outputPlanes() const { return m_outputPlanes; }
+  Index outputRows() const { return m_outputRows; }
+  Index outputCols() const { return m_outputCols; }
+  Index userPlaneStride() const { return m_plane_strides; }
+  Index userRowStride() const { return m_row_strides; }
+  Index userColStride() const { return m_col_strides; }
+  Index userInPlaneStride() const { return m_in_plane_strides; }
+  Index userInRowStride() const { return m_in_row_strides; }
+  Index userInColStride() const { return m_in_col_strides; }
+  Index planeInflateStride() const { return m_plane_inflate_strides; }
+  Index rowInflateStride() const { return m_row_inflate_strides; }
+  Index colInflateStride() const { return m_col_inflate_strides; }
+
+ protected:
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packetWithPossibleZero(Index index) const
+  {
+    EIGEN_ALIGN_MAX typename internal::remove_const<CoeffReturnType>::type values[PacketSize];
+    for (int i = 0; i < PacketSize; ++i) {
+      values[i] = coeff(index+i);
+    }
+    PacketReturnType rslt = internal::pload<PacketReturnType>(values);
+    return rslt;
+  }
+
+  Dimensions m_dimensions;
+
+  // Parameters passed to the costructor.
+  Index m_plane_strides;
+  Index m_row_strides;
+  Index m_col_strides;
+
+  Index m_outputPlanes;
+  Index m_outputRows;
+  Index m_outputCols;
+
+  Index m_planePaddingTop;
+  Index m_rowPaddingTop;
+  Index m_colPaddingLeft;
+
+  Index m_in_plane_strides;
+  Index m_in_row_strides;
+  Index m_in_col_strides;
+
+  Index m_plane_inflate_strides;
+  Index m_row_inflate_strides;
+  Index m_col_inflate_strides;
+
+  // Cached input size.
+  Index m_inputDepth;
+  Index m_inputPlanes;
+  Index m_inputRows;
+  Index m_inputCols;
+
+  // Other cached variables.
+  Index m_outputPlanesRows;
+
+  // Effective input/patch post-inflation size.
+  Index m_input_planes_eff;
+  Index m_input_rows_eff;
+  Index m_input_cols_eff;
+  Index m_patch_planes_eff;
+  Index m_patch_row
