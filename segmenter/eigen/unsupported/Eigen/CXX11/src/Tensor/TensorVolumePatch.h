@@ -570,4 +570,39 @@ struct TensorEvaluator<const TensorVolumePatchOp<Planes, Rows, Cols, ArgType>, D
   Index m_input_rows_eff;
   Index m_input_cols_eff;
   Index m_patch_planes_eff;
-  Index m_patch_row
+  Index m_patch_rows_eff;
+  Index m_patch_cols_eff;
+
+  // Strides for the output tensor.
+  Index m_otherStride;
+  Index m_patchStride;
+  Index m_rowStride;
+  Index m_colStride;
+
+  // Strides for the input tensor.
+  Index m_planeInputStride;
+  Index m_rowInputStride;
+  Index m_colInputStride;
+  Index m_otherInputStride;
+
+  internal::TensorIntDivisor<Index> m_fastOtherStride;
+  internal::TensorIntDivisor<Index> m_fastPatchStride;
+  internal::TensorIntDivisor<Index> m_fastColStride;
+  internal::TensorIntDivisor<Index> m_fastRowStride;
+  internal::TensorIntDivisor<Index> m_fastInputPlaneStride;
+  internal::TensorIntDivisor<Index> m_fastInputRowStride;
+  internal::TensorIntDivisor<Index> m_fastInputColStride;
+  internal::TensorIntDivisor<Index> m_fastInputColsEff;
+  internal::TensorIntDivisor<Index> m_fastOutputPlanesRows;
+  internal::TensorIntDivisor<Index> m_fastOutputPlanes;
+  internal::TensorIntDivisor<Index> m_fastOutputDepth;
+
+  Scalar m_paddingValue;
+
+  TensorEvaluator<ArgType, Device> m_impl;
+};
+
+
+} // end namespace Eigen
+
+#endif // EIGEN_CXX11_TENSOR_TENSOR_VOLUME_PATCH_H
