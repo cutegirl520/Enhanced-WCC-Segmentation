@@ -269,4 +269,25 @@ inline void DynamicSGroup::updateGlobalFlags(int flagDiffOfSameGenerator)
         m_globalFlags |= GlobalZeroFlag;
         break;
       case ConjugationFlag:
-        // every eleme
+        // every element is it's own conjugate => whole tensor is real
+        m_globalFlags |= GlobalRealFlag;
+        break;
+      case (NegationFlag | ConjugationFlag):
+        // every element is it's own negative conjugate => whole tensor is imaginary
+        m_globalFlags |= GlobalImagFlag;
+        break;
+      /* NOTE:
+       *   since GlobalZeroFlag == GlobalRealFlag | GlobalImagFlag, if one generator
+       *   causes the tensor to be real and the next one to be imaginary, this will
+       *   trivially give the correct result
+       */
+    }
+}
+
+} // end namespace Eigen
+
+#endif // EIGEN_CXX11_TENSORSYMMETRY_DYNAMICSYMMETRY_H
+
+/*
+ * kate: space-indent on; indent-width 2; mixedindent off; indent-mode cstyle;
+ */
