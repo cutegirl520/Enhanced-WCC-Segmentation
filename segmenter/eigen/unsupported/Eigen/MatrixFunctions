@@ -490,4 +490,12 @@ corresponding to a rotation over 60 degrees, is a rotation over 30 degrees:
     \end{array} \right]. \f]
 
 \include MatrixSquareRoot.cpp
-Output: \verbinclude MatrixSquareRoot.ou
+Output: \verbinclude MatrixSquareRoot.out
+
+\sa class RealSchur, class ComplexSchur, class MatrixSquareRoot,
+    SelfAdjointEigenSolver::operatorSqrt().
+
+*/
+
+#endif // EIGEN_MATRIX_FUNCTIONS
+
