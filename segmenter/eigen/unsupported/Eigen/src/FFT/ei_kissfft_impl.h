@@ -407,4 +407,14 @@ struct kissfft_impl
         int ncfft= ncfft2<<1;
         Scalar pi =  acos( Scalar(-1) );
         for (int k=1;k<=ncfft2;++k) 
-          twidref[k-1] =
+          twidref[k-1] = exp( Complex(0,-pi * (Scalar(k) / ncfft + Scalar(.5)) ) );
+      }
+      return &twidref[0];
+    }
+};
+
+} // end namespace internal
+
+} // end namespace Eigen
+
+/* vim: set filetype=cpp et sw=2 ts=2 ai: */
