@@ -42,4 +42,58 @@ void r1updt(
             givens.makeGivens(-v[n-1], v[j]);
 
             /* apply the transformation to v and store the information */
-            /* necessary to recover the g
+            /* necessary to recover the givens rotation. */
+            v[n-1] = givens.s() * v[j] + givens.c() * v[n-1];
+            v_givens[j] = givens;
+
+            /* apply the transformation to s and extend the spike in w. */
+            for (i = j; i < m; ++i) {
+                temp = givens.c() * s(j,i) - givens.s() * w[i];
+                w[i] = givens.s() * s(j,i) + givens.c() * w[i];
+                s(j,i) = temp;
+            }
+        } else
+            v_givens[j] = IdentityRotation;
+    }
+
+    /* add the spike from the rank 1 update to w. */
+    w += v[n-1] * u;
+
+    /* eliminate the spike. */
+    *sing = false;
+    for (j = 0; j < n-1; ++j) {
+        if (w[j] != 0.) {
+            /* determine a givens rotation which eliminates the */
+            /* j-th element of the spike. */
+            givens.makeGivens(-s(j,j), w[j]);
+
+            /* apply the transformation to s and reduce the spike in w. */
+            for (i = j; i < m; ++i) {
+                temp = givens.c() * s(j,i) + givens.s() * w[i];
+                w[i] = -givens.s() * s(j,i) + givens.c() * w[i];
+                s(j,i) = temp;
+            }
+
+            /* store the information necessary to recover the */
+            /* givens rotation. */
+            w_givens[j] = givens;
+        } else
+            v_givens[j] = IdentityRotation;
+
+        /* test for zero diagonal elements in the output s. */
+        if (s(j,j) == 0.) {
+            *sing = true;
+        }
+    }
+    /* move w back into the last column of the output s. */
+    s(n-1,n-1) = w[n-1];
+
+    if (s(j,j) == 0.) {
+        *sing = true;
+    }
+    return;
+}
+
+} // end namespace internal
+
+} // end namespace Eigen
