@@ -741,3 +741,812 @@ struct igamma_impl {
     const Scalar one = 1;
     const Scalar machep = cephes_helper<Scalar>::machep();
     const Scalar maxlog = numext::log(NumTraits<Scalar>::highest());
+
+    Scalar ans, ax, c, r;
+
+    /* Compute  x**a * exp(-x) / gamma(a)  */
+    ax = a * numext::log(x) - x - lgamma_impl<Scalar>::run(a);
+    if (ax < -maxlog) {
+      // underflow
+      return zero;
+    }
+    ax = numext::exp(ax);
+
+    /* power series */
+    r = a;
+    c = one;
+    ans = one;
+
+    while (true) {
+      r += one;
+      c *= x/r;
+      ans += c;
+      if (c/ans <= machep) {
+        break;
+      }
+    }
+
+    return (ans * ax / a);
+  }
+};
+
+#endif  // EIGEN_HAS_C99_MATH
+
+/*****************************************************************************
+ * Implementation of Riemann zeta function of two arguments, based on Cephes *
+ *****************************************************************************/
+
+template <typename Scalar>
+struct zeta_retval {
+    typedef Scalar type;
+};
+
+template <typename Scalar>
+struct zeta_impl_series {
+  EIGEN_DEVICE_FUNC
+  static EIGEN_STRONG_INLINE Scalar run(const Scalar) {
+    EIGEN_STATIC_ASSERT((internal::is_same<Scalar, Scalar>::value == false),
+                        THIS_TYPE_IS_NOT_SUPPORTED);
+    return Scalar(0);
+  }
+};
+
+template <>
+struct zeta_impl_series<float> {
+  EIGEN_DEVICE_FUNC
+  static EIGEN_STRONG_INLINE bool run(float& a, float& b, float& s, const float x, const float machep) {
+    int i = 0;  
+    while(i < 9)
+    {
+        i += 1;
+        a += 1.0f;
+        b = numext::pow( a, -x );
+        s += b;
+        if( numext::abs(b/s) < machep )
+            return true;
+    }
+    
+    //Return whether we are done
+    return false;
+  }
+};
+
+template <>
+struct zeta_impl_series<double> {
+  EIGEN_DEVICE_FUNC
+  static EIGEN_STRONG_INLINE bool run(double& a, double& b, double& s, const double x, const double machep) {
+    int i = 0;  
+    while( (i < 9) || (a <= 9.0) )
+    {
+        i += 1;
+        a += 1.0;
+        b = numext::pow( a, -x );
+        s += b;
+        if( numext::abs(b/s) < machep )
+            return true;
+    }
+    
+    //Return whether we are done
+    return false;
+  }
+};
+    
+template <typename Scalar>
+struct zeta_impl {
+    EIGEN_DEVICE_FUNC
+    static Scalar run(Scalar x, Scalar q) {
+        /*							zeta.c
+         *
+         *	Riemann zeta function of two arguments
+         *
+         *
+         *
+         * SYNOPSIS:
+         *
+         * double x, q, y, zeta();
+         *
+         * y = zeta( x, q );
+         *
+         *
+         *
+         * DESCRIPTION:
+         *
+         *
+         *
+         *                 inf.
+         *                  -        -x
+         *   zeta(x,q)  =   >   (k+q)
+         *                  -
+         *                 k=0
+         *
+         * where x > 1 and q is not a negative integer or zero.
+         * The Euler-Maclaurin summation formula is used to obtain
+         * the expansion
+         *
+         *                n
+         *                -       -x
+         * zeta(x,q)  =   >  (k+q)
+         *                -
+         *               k=1
+         *
+         *           1-x                 inf.  B   x(x+1)...(x+2j)
+         *      (n+q)           1         -     2j
+         *  +  ---------  -  -------  +   >    --------------------
+         *        x-1              x      -                   x+2j+1
+         *                   2(n+q)      j=1       (2j)! (n+q)
+         *
+         * where the B2j are Bernoulli numbers.  Note that (see zetac.c)
+         * zeta(x,1) = zetac(x) + 1.
+         *
+         *
+         *
+         * ACCURACY:
+         *
+         * Relative error for single precision:
+         * arithmetic   domain     # trials      peak         rms
+         *    IEEE      0,25        10000       6.9e-7      1.0e-7
+         *
+         * Large arguments may produce underflow in powf(), in which
+         * case the results are inaccurate.
+         *
+         * REFERENCE:
+         *
+         * Gradshteyn, I. S., and I. M. Ryzhik, Tables of Integrals,
+         * Series, and Products, p. 1073; Academic Press, 1980.
+         *
+         */
+        
+        int i;
+        Scalar p, r, a, b, k, s, t, w;
+        
+        const Scalar A[] = {
+            Scalar(12.0),
+            Scalar(-720.0),
+            Scalar(30240.0),
+            Scalar(-1209600.0),
+            Scalar(47900160.0),
+            Scalar(-1.8924375803183791606e9), /*1.307674368e12/691*/
+            Scalar(7.47242496e10),
+            Scalar(-2.950130727918164224e12), /*1.067062284288e16/3617*/
+            Scalar(1.1646782814350067249e14), /*5.109094217170944e18/43867*/
+            Scalar(-4.5979787224074726105e15), /*8.028576626982912e20/174611*/
+            Scalar(1.8152105401943546773e17), /*1.5511210043330985984e23/854513*/
+            Scalar(-7.1661652561756670113e18) /*1.6938241367317436694528e27/236364091*/
+            };
+            
+        const Scalar maxnum = NumTraits<Scalar>::infinity();
+        const Scalar zero = 0.0, half = 0.5, one = 1.0;
+        const Scalar machep = cephes_helper<Scalar>::machep();
+        const Scalar nan = NumTraits<Scalar>::quiet_NaN();
+        
+        if( x == one )
+            return maxnum;
+        
+        if( x < one )
+        {
+            return nan;
+        }
+        
+        if( q <= zero )
+        {
+            if(q == numext::floor(q))
+            {
+                return maxnum;
+            }
+            p = x;
+            r = numext::floor(p);
+            if (p != r)
+                return nan;
+        }
+        
+        /* Permit negative q but continue sum until n+q > +9 .
+         * This case should be handled by a reflection formula.
+         * If q<0 and x is an integer, there is a relation to
+         * the polygamma function.
+         */
+        s = numext::pow( q, -x );
+        a = q;
+        b = zero;
+        // Run the summation in a helper function that is specific to the floating precision
+        if (zeta_impl_series<Scalar>::run(a, b, s, x, machep)) {
+            return s;
+        }
+        
+        w = a;
+        s += b*w/(x-one);
+        s -= half * b;
+        a = one;
+        k = zero;
+        for( i=0; i<12; i++ )
+        {
+            a *= x + k;
+            b /= w;
+            t = a*b/A[i];
+            s = s + t;
+            t = numext::abs(t/s);
+            if( t < machep ) {
+              break;
+            }
+            k += one;
+            a *= x + k;
+            b /= w;
+            k += one;
+        }
+        return s;
+  }
+};
+
+/****************************************************************************
+ * Implementation of polygamma function, requires C++11/C99                 *
+ ****************************************************************************/
+
+template <typename Scalar>
+struct polygamma_retval {
+    typedef Scalar type;
+};
+    
+#if !EIGEN_HAS_C99_MATH
+    
+template <typename Scalar>
+struct polygamma_impl {
+    EIGEN_DEVICE_FUNC
+    static EIGEN_STRONG_INLINE Scalar run(Scalar n, Scalar x) {
+        EIGEN_STATIC_ASSERT((internal::is_same<Scalar, Scalar>::value == false),
+                            THIS_TYPE_IS_NOT_SUPPORTED);
+        return Scalar(0);
+    }
+};
+    
+#else
+    
+template <typename Scalar>
+struct polygamma_impl {
+    EIGEN_DEVICE_FUNC
+    static Scalar run(Scalar n, Scalar x) {
+        Scalar zero = 0.0, one = 1.0;
+        Scalar nplus = n + one;
+        const Scalar nan = NumTraits<Scalar>::quiet_NaN();
+        
+        // Check that n is an integer
+        if (numext::floor(n) != n) {
+            return nan;
+        }
+        // Just return the digamma function for n = 1
+        else if (n == zero) {
+            return digamma_impl<Scalar>::run(x);
+        }
+        // Use the same implementation as scipy
+        else {
+            Scalar factorial = numext::exp(lgamma_impl<Scalar>::run(nplus));
+            return numext::pow(-one, nplus) * factorial * zeta_impl<Scalar>::run(nplus, x);
+        }
+  }
+};
+    
+#endif  // EIGEN_HAS_C99_MATH
+
+/************************************************************************************************
+ * Implementation of betainc (incomplete beta integral), based on Cephes but requires C++11/C99 *
+ ************************************************************************************************/
+
+template <typename Scalar>
+struct betainc_retval {
+  typedef Scalar type;
+};
+
+#if !EIGEN_HAS_C99_MATH
+
+template <typename Scalar>
+struct betainc_impl {
+  EIGEN_DEVICE_FUNC
+  static EIGEN_STRONG_INLINE Scalar run(Scalar a, Scalar b, Scalar x) {
+    EIGEN_STATIC_ASSERT((internal::is_same<Scalar, Scalar>::value == false),
+                        THIS_TYPE_IS_NOT_SUPPORTED);
+    return Scalar(0);
+  }
+};
+
+#else
+
+template <typename Scalar>
+struct betainc_impl {
+  EIGEN_DEVICE_FUNC
+  static EIGEN_STRONG_INLINE Scalar run(Scalar, Scalar, Scalar) {
+    /*	betaincf.c
+     *
+     *	Incomplete beta integral
+     *
+     *
+     * SYNOPSIS:
+     *
+     * float a, b, x, y, betaincf();
+     *
+     * y = betaincf( a, b, x );
+     *
+     *
+     * DESCRIPTION:
+     *
+     * Returns incomplete beta integral of the arguments, evaluated
+     * from zero to x.  The function is defined as
+     *
+     *                  x
+     *     -            -
+     *    | (a+b)      | |  a-1     b-1
+     *  -----------    |   t   (1-t)   dt.
+     *   -     -     | |
+     *  | (a) | (b)   -
+     *                 0
+     *
+     * The domain of definition is 0 <= x <= 1.  In this
+     * implementation a and b are restricted to positive values.
+     * The integral from x to 1 may be obtained by the symmetry
+     * relation
+     *
+     *    1 - betainc( a, b, x )  =  betainc( b, a, 1-x ).
+     *
+     * The integral is evaluated by a continued fraction expansion.
+     * If a < 1, the function calls itself recursively after a
+     * transformation to increase a to a+1.
+     *
+     * ACCURACY (float):
+     *
+     * Tested at random points (a,b,x) with a and b in the indicated
+     * interval and x between 0 and 1.
+     *
+     * arithmetic   domain     # trials      peak         rms
+     * Relative error:
+     *    IEEE       0,30       10000       3.7e-5      5.1e-6
+     *    IEEE       0,100      10000       1.7e-4      2.5e-5
+     * The useful domain for relative error is limited by underflow
+     * of the single precision exponential function.
+     * Absolute error:
+     *    IEEE       0,30      100000       2.2e-5      9.6e-7
+     *    IEEE       0,100      10000       6.5e-5      3.7e-6
+     *
+     * Larger errors may occur for extreme ratios of a and b.
+     *
+     * ACCURACY (double):
+     * arithmetic   domain     # trials      peak         rms
+     *    IEEE      0,5         10000       6.9e-15     4.5e-16
+     *    IEEE      0,85       250000       2.2e-13     1.7e-14
+     *    IEEE      0,1000      30000       5.3e-12     6.3e-13
+     *    IEEE      0,10000    250000       9.3e-11     7.1e-12
+     *    IEEE      0,100000    10000       8.7e-10     4.8e-11
+     * Outputs smaller than the IEEE gradual underflow threshold
+     * were excluded from these statistics.
+     *
+     * ERROR MESSAGES:
+     *   message         condition      value returned
+     * incbet domain      x<0, x>1          nan
+     * incbet underflow                     nan
+     */
+
+    EIGEN_STATIC_ASSERT((internal::is_same<Scalar, Scalar>::value == false),
+                        THIS_TYPE_IS_NOT_SUPPORTED);
+    return Scalar(0);
+  }
+};
+
+/* Continued fraction expansion #1 for incomplete beta integral (small_branch = True)
+ * Continued fraction expansion #2 for incomplete beta integral (small_branch = False)
+ */
+template <typename Scalar>
+struct incbeta_cfe {
+  EIGEN_DEVICE_FUNC
+  static EIGEN_STRONG_INLINE Scalar run(Scalar a, Scalar b, Scalar x, bool small_branch) {
+    EIGEN_STATIC_ASSERT((internal::is_same<Scalar, float>::value ||
+                         internal::is_same<Scalar, double>::value),
+                        THIS_TYPE_IS_NOT_SUPPORTED);
+    const Scalar big = cephes_helper<Scalar>::big();
+    const Scalar machep = cephes_helper<Scalar>::machep();
+    const Scalar biginv = cephes_helper<Scalar>::biginv();
+
+    const Scalar zero = 0;
+    const Scalar one = 1;
+    const Scalar two = 2;
+
+    Scalar xk, pk, pkm1, pkm2, qk, qkm1, qkm2;
+    Scalar k1, k2, k3, k4, k5, k6, k7, k8, k26update;
+    Scalar ans;
+    int n;
+
+    const int num_iters = (internal::is_same<Scalar, float>::value) ? 100 : 300;
+    const Scalar thresh =
+        (internal::is_same<Scalar, float>::value) ? machep : Scalar(3) * machep;
+    Scalar r = (internal::is_same<Scalar, float>::value) ? zero : one;
+
+    if (small_branch) {
+      k1 = a;
+      k2 = a + b;
+      k3 = a;
+      k4 = a + one;
+      k5 = one;
+      k6 = b - one;
+      k7 = k4;
+      k8 = a + two;
+      k26update = one;
+    } else {
+      k1 = a;
+      k2 = b - one;
+      k3 = a;
+      k4 = a + one;
+      k5 = one;
+      k6 = a + b;
+      k7 = a + one;
+      k8 = a + two;
+      k26update = -one;
+      x = x / (one - x);
+    }
+
+    pkm2 = zero;
+    qkm2 = one;
+    pkm1 = one;
+    qkm1 = one;
+    ans = one;
+    n = 0;
+
+    do {
+      xk = -(x * k1 * k2) / (k3 * k4);
+      pk = pkm1 + pkm2 * xk;
+      qk = qkm1 + qkm2 * xk;
+      pkm2 = pkm1;
+      pkm1 = pk;
+      qkm2 = qkm1;
+      qkm1 = qk;
+
+      xk = (x * k5 * k6) / (k7 * k8);
+      pk = pkm1 + pkm2 * xk;
+      qk = qkm1 + qkm2 * xk;
+      pkm2 = pkm1;
+      pkm1 = pk;
+      qkm2 = qkm1;
+      qkm1 = qk;
+
+      if (qk != zero) {
+        r = pk / qk;
+        if (numext::abs(ans - r) < numext::abs(r) * thresh) {
+          return r;
+        }
+        ans = r;
+      }
+
+      k1 += one;
+      k2 += k26update;
+      k3 += two;
+      k4 += two;
+      k5 += one;
+      k6 -= k26update;
+      k7 += two;
+      k8 += two;
+
+      if ((numext::abs(qk) + numext::abs(pk)) > big) {
+        pkm2 *= biginv;
+        pkm1 *= biginv;
+        qkm2 *= biginv;
+        qkm1 *= biginv;
+      }
+      if ((numext::abs(qk) < biginv) || (numext::abs(pk) < biginv)) {
+        pkm2 *= big;
+        pkm1 *= big;
+        qkm2 *= big;
+        qkm1 *= big;
+      }
+    } while (++n < num_iters);
+
+    return ans;
+  }
+};
+
+/* Helper functions depending on the Scalar type */
+template <typename Scalar>
+struct betainc_helper {};
+
+template <>
+struct betainc_helper<float> {
+  /* Core implementation, assumes a large (> 1.0) */
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE float incbsa(float aa, float bb,
+                                                            float xx) {
+    float ans, a, b, t, x, onemx;
+    bool reversed_a_b = false;
+
+    onemx = 1.0f - xx;
+
+    /* see if x is greater than the mean */
+    if (xx > (aa / (aa + bb))) {
+      reversed_a_b = true;
+      a = bb;
+      b = aa;
+      t = xx;
+      x = onemx;
+    } else {
+      a = aa;
+      b = bb;
+      t = onemx;
+      x = xx;
+    }
+
+    /* Choose expansion for optimal convergence */
+    if (b > 10.0f) {
+      if (numext::abs(b * x / a) < 0.3f) {
+        t = betainc_helper<float>::incbps(a, b, x);
+        if (reversed_a_b) t = 1.0f - t;
+        return t;
+      }
+    }
+
+    ans = x * (a + b - 2.0f) / (a - 1.0f);
+    if (ans < 1.0f) {
+      ans = incbeta_cfe<float>::run(a, b, x, true /* small_branch */);
+      t = b * numext::log(t);
+    } else {
+      ans = incbeta_cfe<float>::run(a, b, x, false /* small_branch */);
+      t = (b - 1.0f) * numext::log(t);
+    }
+
+    t += a * numext::log(x) + lgamma_impl<float>::run(a + b) -
+         lgamma_impl<float>::run(a) - lgamma_impl<float>::run(b);
+    t += numext::log(ans / a);
+    t = numext::exp(t);
+
+    if (reversed_a_b) t = 1.0f - t;
+    return t;
+  }
+
+  EIGEN_DEVICE_FUNC
+  static EIGEN_STRONG_INLINE float incbps(float a, float b, float x) {
+    float t, u, y, s;
+    const float machep = cephes_helper<float>::machep();
+
+    y = a * numext::log(x) + (b - 1.0f) * numext::log1p(-x) - numext::log(a);
+    y -= lgamma_impl<float>::run(a) + lgamma_impl<float>::run(b);
+    y += lgamma_impl<float>::run(a + b);
+
+    t = x / (1.0f - x);
+    s = 0.0f;
+    u = 1.0f;
+    do {
+      b -= 1.0f;
+      if (b == 0.0f) {
+        break;
+      }
+      a += 1.0f;
+      u *= t * b / a;
+      s += u;
+    } while (numext::abs(u) > machep);
+
+    return numext::exp(y) * (1.0f + s);
+  }
+};
+
+template <>
+struct betainc_impl<float> {
+  EIGEN_DEVICE_FUNC
+  static float run(float a, float b, float x) {
+    const float nan = NumTraits<float>::quiet_NaN();
+    float ans, t;
+
+    if (a <= 0.0f) return nan;
+    if (b <= 0.0f) return nan;
+    if ((x <= 0.0f) || (x >= 1.0f)) {
+      if (x == 0.0f) return 0.0f;
+      if (x == 1.0f) return 1.0f;
+      // mtherr("betaincf", DOMAIN);
+      return nan;
+    }
+
+    /* transformation for small aa */
+    if (a <= 1.0f) {
+      ans = betainc_helper<float>::incbsa(a + 1.0f, b, x);
+      t = a * numext::log(x) + b * numext::log1p(-x) +
+          lgamma_impl<float>::run(a + b) - lgamma_impl<float>::run(a + 1.0f) -
+          lgamma_impl<float>::run(b);
+      return (ans + numext::exp(t));
+    } else {
+      return betainc_helper<float>::incbsa(a, b, x);
+    }
+  }
+};
+
+template <>
+struct betainc_helper<double> {
+  EIGEN_DEVICE_FUNC
+  static EIGEN_STRONG_INLINE double incbps(double a, double b, double x) {
+    const double machep = cephes_helper<double>::machep();
+
+    double s, t, u, v, n, t1, z, ai;
+
+    ai = 1.0 / a;
+    u = (1.0 - b) * x;
+    v = u / (a + 1.0);
+    t1 = v;
+    t = u;
+    n = 2.0;
+    s = 0.0;
+    z = machep * ai;
+    while (numext::abs(v) > z) {
+      u = (n - b) * x / n;
+      t *= u;
+      v = t / (a + n);
+      s += v;
+      n += 1.0;
+    }
+    s += t1;
+    s += ai;
+
+    u = a * numext::log(x);
+    // TODO: gamma() is not directly implemented in Eigen.
+    /*
+    if ((a + b) < maxgam && numext::abs(u) < maxlog) {
+      t = gamma(a + b) / (gamma(a) * gamma(b));
+      s = s * t * pow(x, a);
+    } else {
+    */
+    t = lgamma_impl<double>::run(a + b) - lgamma_impl<double>::run(a) -
+        lgamma_impl<double>::run(b) + u + numext::log(s);
+    return s = numext::exp(t);
+  }
+};
+
+template <>
+struct betainc_impl<double> {
+  EIGEN_DEVICE_FUNC
+  static double run(double aa, double bb, double xx) {
+    const double nan = NumTraits<double>::quiet_NaN();
+    const double machep = cephes_helper<double>::machep();
+    // const double maxgam = 171.624376956302725;
+
+    double a, b, t, x, xc, w, y;
+    bool reversed_a_b = false;
+
+    if (aa <= 0.0 || bb <= 0.0) {
+      return nan;  // goto domerr;
+    }
+
+    if ((xx <= 0.0) || (xx >= 1.0)) {
+      if (xx == 0.0) return (0.0);
+      if (xx == 1.0) return (1.0);
+      // mtherr("incbet", DOMAIN);
+      return nan;
+    }
+
+    if ((bb * xx) <= 1.0 && xx <= 0.95) {
+      return betainc_helper<double>::incbps(aa, bb, xx);
+    }
+
+    w = 1.0 - xx;
+
+    /* Reverse a and b if x is greater than the mean. */
+    if (xx > (aa / (aa + bb))) {
+      reversed_a_b = true;
+      a = bb;
+      b = aa;
+      xc = xx;
+      x = w;
+    } else {
+      a = aa;
+      b = bb;
+      xc = w;
+      x = xx;
+    }
+
+    if (reversed_a_b && (b * x) <= 1.0 && x <= 0.95) {
+      t = betainc_helper<double>::incbps(a, b, x);
+      if (t <= machep) {
+        t = 1.0 - machep;
+      } else {
+        t = 1.0 - t;
+      }
+      return t;
+    }
+
+    /* Choose expansion for better convergence. */
+    y = x * (a + b - 2.0) - (a - 1.0);
+    if (y < 0.0) {
+      w = incbeta_cfe<double>::run(a, b, x, true /* small_branch */);
+    } else {
+      w = incbeta_cfe<double>::run(a, b, x, false /* small_branch */) / xc;
+    }
+
+    /* Multiply w by the factor
+         a      b   _             _     _
+        x  (1-x)   | (a+b) / ( a | (a) | (b) ) .   */
+
+    y = a * numext::log(x);
+    t = b * numext::log(xc);
+    // TODO: gamma is not directly implemented in Eigen.
+    /*
+    if ((a + b) < maxgam && numext::abs(y) < maxlog && numext::abs(t) < maxlog)
+    {
+      t = pow(xc, b);
+      t *= pow(x, a);
+      t /= a;
+      t *= w;
+      t *= gamma(a + b) / (gamma(a) * gamma(b));
+    } else {
+    */
+    /* Resort to logarithms.  */
+    y += t + lgamma_impl<double>::run(a + b) - lgamma_impl<double>::run(a) -
+         lgamma_impl<double>::run(b);
+    y += numext::log(w / a);
+    t = numext::exp(y);
+
+    /* } */
+    // done:
+
+    if (reversed_a_b) {
+      if (t <= machep) {
+        t = 1.0 - machep;
+      } else {
+        t = 1.0 - t;
+      }
+    }
+    return t;
+  }
+};
+
+#endif  // EIGEN_HAS_C99_MATH
+
+}  // end namespace internal
+
+namespace numext {
+
+template <typename Scalar>
+EIGEN_DEVICE_FUNC inline EIGEN_MATHFUNC_RETVAL(lgamma, Scalar)
+    lgamma(const Scalar& x) {
+  return EIGEN_MATHFUNC_IMPL(lgamma, Scalar)::run(x);
+}
+
+template <typename Scalar>
+EIGEN_DEVICE_FUNC inline EIGEN_MATHFUNC_RETVAL(digamma, Scalar)
+    digamma(const Scalar& x) {
+  return EIGEN_MATHFUNC_IMPL(digamma, Scalar)::run(x);
+}
+
+template <typename Scalar>
+EIGEN_DEVICE_FUNC inline EIGEN_MATHFUNC_RETVAL(zeta, Scalar)
+zeta(const Scalar& x, const Scalar& q) {
+    return EIGEN_MATHFUNC_IMPL(zeta, Scalar)::run(x, q);
+}
+
+template <typename Scalar>
+EIGEN_DEVICE_FUNC inline EIGEN_MATHFUNC_RETVAL(polygamma, Scalar)
+polygamma(const Scalar& n, const Scalar& x) {
+    return EIGEN_MATHFUNC_IMPL(polygamma, Scalar)::run(n, x);
+}
+
+template <typename Scalar>
+EIGEN_DEVICE_FUNC inline EIGEN_MATHFUNC_RETVAL(erf, Scalar)
+    erf(const Scalar& x) {
+  return EIGEN_MATHFUNC_IMPL(erf, Scalar)::run(x);
+}
+
+template <typename Scalar>
+EIGEN_DEVICE_FUNC inline EIGEN_MATHFUNC_RETVAL(erfc, Scalar)
+    erfc(const Scalar& x) {
+  return EIGEN_MATHFUNC_IMPL(erfc, Scalar)::run(x);
+}
+
+template <typename Scalar>
+EIGEN_DEVICE_FUNC inline EIGEN_MATHFUNC_RETVAL(igamma, Scalar)
+    igamma(const Scalar& a, const Scalar& x) {
+  return EIGEN_MATHFUNC_IMPL(igamma, Scalar)::run(a, x);
+}
+
+template <typename Scalar>
+EIGEN_DEVICE_FUNC inline EIGEN_MATHFUNC_RETVAL(igammac, Scalar)
+    igammac(const Scalar& a, const Scalar& x) {
+  return EIGEN_MATHFUNC_IMPL(igammac, Scalar)::run(a, x);
+}
+
+template <typename Scalar>
+EIGEN_DEVICE_FUNC inline EIGEN_MATHFUNC_RETVAL(betainc, Scalar)
+    betainc(const Scalar& a, const Scalar& b, const Scalar& x) {
+  return EIGEN_MATHFUNC_IMPL(betainc, Scalar)::run(a, b, x);
+}
+
+}  // end namespace numext
+
+
+}  // end namespace Eigen
+
+#endif  // EIGEN_SPECIAL_FUNCTIONS_H
