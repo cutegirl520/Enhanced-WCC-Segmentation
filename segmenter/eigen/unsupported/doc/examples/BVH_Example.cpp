@@ -42,4 +42,9 @@ int main()
 
   //using BVH to find closest red-blue pair
   minimizer.calls = 0;
-  KdBVH<double, 2, Vector2d> redTree(redPoin
+  KdBVH<double, 2, Vector2d> redTree(redPoints.begin(), redPoints.end()), blueTree(bluePoints.begin(), bluePoints.end()); //construct the trees
+  minDistSq = BVMinimize(redTree, blueTree, minimizer); //actual BVH minimization call
+  std::cout << "BVH distance         = " << sqrt(minDistSq) << ", calls = " << minimizer.calls << std::endl;
+
+  return 0;
+}
