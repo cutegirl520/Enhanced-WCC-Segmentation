@@ -257,4 +257,150 @@ class PolynomialSolverBase
      */
     inline const RealScalar& greatestRealRoot(
         bool& hasArealRoot,
-        const RealScalar& absImaginaryThreshold = NumTra
+        const RealScalar& absImaginaryThreshold = NumTraits<Scalar>::dummy_precision() ) const
+    {
+      std::greater<Scalar> greater;
+      return selectRealRoot_withRespectToRealPart( greater, hasArealRoot, absImaginaryThreshold );
+    }
+
+
+    /**
+     * \returns the real root with smallest value.
+     * A real root is defined as the real part of a complex root with absolute imaginary
+     * part smallest than absImaginaryThreshold.
+     * absImaginaryThreshold takes the dummy_precision associated
+     * with the _Scalar template parameter of the PolynomialSolver class as the default value.
+     * If no real root is found the boolean hasArealRoot is set to false and the real part of
+     * the root with smallest absolute imaginary part is returned instead.
+     *
+     * \param[out] hasArealRoot : boolean true if a real root is found according to the
+     *  absImaginaryThreshold criterion, false otherwise.
+     * \param[in] absImaginaryThreshold : threshold on the absolute imaginary part to decide
+     *  whether or not a root is real.
+     */
+    inline const RealScalar& smallestRealRoot(
+        bool& hasArealRoot,
+        const RealScalar& absImaginaryThreshold = NumTraits<Scalar>::dummy_precision() ) const
+    {
+      std::less<Scalar> less;
+      return selectRealRoot_withRespectToRealPart( less, hasArealRoot, absImaginaryThreshold );
+    }
+
+  protected:
+    RootsType               m_roots;
+};
+
+#define EIGEN_POLYNOMIAL_SOLVER_BASE_INHERITED_TYPES( BASE )  \
+  typedef typename BASE::Scalar                 Scalar;       \
+  typedef typename BASE::RealScalar             RealScalar;   \
+  typedef typename BASE::RootType               RootType;     \
+  typedef typename BASE::RootsType              RootsType;
+
+
+
+/** \ingroup Polynomials_Module
+  *
+  * \class PolynomialSolver
+  *
+  * \brief A polynomial solver
+  *
+  * Computes the complex roots of a real polynomial.
+  *
+  * \param _Scalar the scalar type, i.e., the type of the polynomial coefficients
+  * \param _Deg the degree of the polynomial, can be a compile time value or Dynamic.
+  *             Notice that the number of polynomial coefficients is _Deg+1.
+  *
+  * This class implements a polynomial solver and provides convenient methods such as
+  * - real roots,
+  * - greatest, smallest complex roots,
+  * - real roots with greatest, smallest absolute real value.
+  * - greatest, smallest real roots.
+  *
+  * WARNING: this polynomial solver is experimental, part of the unsupported Eigen modules.
+  *
+  *
+  * Currently a QR algorithm is used to compute the eigenvalues of the companion matrix of
+  * the polynomial to compute its roots.
+  * This supposes that the complex moduli of the roots are all distinct: e.g. there should
+  * be no multiple roots or conjugate roots for instance.
+  * With 32bit (float) floating types this problem shows up frequently.
+  * However, almost always, correct accuracy is reached even in these cases for 64bit
+  * (double) floating types and small polynomial degree (<20).
+  */
+template< typename _Scalar, int _Deg >
+class PolynomialSolver : public PolynomialSolverBase<_Scalar,_Deg>
+{
+  public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW_IF_VECTORIZABLE_FIXED_SIZE(_Scalar,_Deg==Dynamic ? Dynamic : _Deg)
+
+    typedef PolynomialSolverBase<_Scalar,_Deg>    PS_Base;
+    EIGEN_POLYNOMIAL_SOLVER_BASE_INHERITED_TYPES( PS_Base )
+
+    typedef Matrix<Scalar,_Deg,_Deg>                 CompanionMatrixType;
+    typedef EigenSolver<CompanionMatrixType>         EigenSolverType;
+
+  public:
+    /** Computes the complex roots of a new polynomial. */
+    template< typename OtherPolynomial >
+    void compute( const OtherPolynomial& poly )
+    {
+      eigen_assert( Scalar(0) != poly[poly.size()-1] );
+      eigen_assert( poly.size() > 1 );
+      if(poly.size() >  2 )
+      {
+        internal::companion<Scalar,_Deg> companion( poly );
+        companion.balance();
+        m_eigenSolver.compute( companion.denseMatrix() );
+        m_roots = m_eigenSolver.eigenvalues();
+      }
+      else if(poly.size () == 2)
+      {
+        m_roots.resize(1);
+        m_roots[0] = -poly[0]/poly[1];
+      }
+    }
+
+  public:
+    template< typename OtherPolynomial >
+    inline PolynomialSolver( const OtherPolynomial& poly ){
+      compute( poly ); }
+
+    inline PolynomialSolver(){}
+
+  protected:
+    using                   PS_Base::m_roots;
+    EigenSolverType         m_eigenSolver;
+};
+
+
+template< typename _Scalar >
+class PolynomialSolver<_Scalar,1> : public PolynomialSolverBase<_Scalar,1>
+{
+  public:
+    typedef PolynomialSolverBase<_Scalar,1>    PS_Base;
+    EIGEN_POLYNOMIAL_SOLVER_BASE_INHERITED_TYPES( PS_Base )
+
+  public:
+    /** Computes the complex roots of a new polynomial. */
+    template< typename OtherPolynomial >
+    void compute( const OtherPolynomial& poly )
+    {
+      eigen_assert( poly.size() == 2 );
+      eigen_assert( Scalar(0) != poly[1] );
+      m_roots[0] = -poly[0]/poly[1];
+    }
+
+  public:
+    template< typename OtherPolynomial >
+    inline PolynomialSolver( const OtherPolynomial& poly ){
+      compute( poly ); }
+
+    inline PolynomialSolver(){}
+
+  protected:
+    using                   PS_Base::m_roots;
+};
+
+} // end namespace Eigen
+
+#endif // EIGEN_POLYNOMIAL_SOLVER_H
