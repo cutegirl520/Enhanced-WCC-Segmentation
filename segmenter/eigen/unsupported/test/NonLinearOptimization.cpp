@@ -710,4 +710,219 @@ void testNistChwirut2(void)
   // check return value
   VERIFY_IS_EQUAL(info, 1);
   VERIFY_IS_EQUAL(lm.nfev, 7);
-  VERIFY_IS_EQUA
+  VERIFY_IS_EQUAL(lm.njev, 6);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 5.1304802941E+02);
+  // check x
+  VERIFY_IS_APPROX(x[0], 1.6657666537E-01);
+  VERIFY_IS_APPROX(x[1], 5.1653291286E-03);
+  VERIFY_IS_APPROX(x[2], 1.2150007096E-02);
+}
+
+
+struct misra1a_functor : Functor<double>
+{
+    misra1a_functor(void) : Functor<double>(2,14) {}
+    static const double m_x[14];
+    static const double m_y[14];
+    int operator()(const VectorXd &b, VectorXd &fvec)
+    {
+        assert(b.size()==2);
+        assert(fvec.size()==14);
+        for(int i=0; i<14; i++) {
+            fvec[i] = b[0]*(1.-exp(-b[1]*m_x[i])) - m_y[i] ;
+        }
+        return 0;
+    }
+    int df(const VectorXd &b, MatrixXd &fjac)
+    {
+        assert(b.size()==2);
+        assert(fjac.rows()==14);
+        assert(fjac.cols()==2);
+        for(int i=0; i<14; i++) {
+            fjac(i,0) = (1.-exp(-b[1]*m_x[i]));
+            fjac(i,1) = (b[0]*m_x[i]*exp(-b[1]*m_x[i]));
+        }
+        return 0;
+    }
+};
+const double misra1a_functor::m_x[14] = { 77.6E0, 114.9E0, 141.1E0, 190.8E0, 239.9E0, 289.0E0, 332.8E0, 378.4E0, 434.8E0, 477.3E0, 536.8E0, 593.1E0, 689.1E0, 760.0E0};
+const double misra1a_functor::m_y[14] = { 10.07E0, 14.73E0, 17.94E0, 23.93E0, 29.61E0, 35.18E0, 40.02E0, 44.82E0, 50.76E0, 55.05E0, 61.01E0, 66.40E0, 75.47E0, 81.78E0};
+
+// http://www.itl.nist.gov/div898/strd/nls/data/misra1a.shtml
+void testNistMisra1a(void)
+{
+  const int n=2;
+  int info;
+
+  VectorXd x(n);
+
+  /*
+   * First try
+   */
+  x<< 500., 0.0001;
+  // do the computation
+  misra1a_functor functor;
+  LevenbergMarquardt<misra1a_functor> lm(functor);
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 19);
+  VERIFY_IS_EQUAL(lm.njev, 15);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 1.2455138894E-01);
+  // check x
+  VERIFY_IS_APPROX(x[0], 2.3894212918E+02);
+  VERIFY_IS_APPROX(x[1], 5.5015643181E-04);
+
+  /*
+   * Second try
+   */
+  x<< 250., 0.0005;
+  // do the computation
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 5);
+  VERIFY_IS_EQUAL(lm.njev, 4);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 1.2455138894E-01);
+  // check x
+  VERIFY_IS_APPROX(x[0], 2.3894212918E+02);
+  VERIFY_IS_APPROX(x[1], 5.5015643181E-04);
+}
+
+struct hahn1_functor : Functor<double>
+{
+    hahn1_functor(void) : Functor<double>(7,236) {}
+    static const double m_x[236];
+    int operator()(const VectorXd &b, VectorXd &fvec)
+    {
+        static const double m_y[236] = { .591E0 , 1.547E0 , 2.902E0 , 2.894E0 , 4.703E0 , 6.307E0 , 7.03E0  , 7.898E0 , 9.470E0 , 9.484E0 , 10.072E0 , 10.163E0 , 11.615E0 , 12.005E0 , 12.478E0 , 12.982E0 , 12.970E0 , 13.926E0 , 14.452E0 , 14.404E0 , 15.190E0 , 15.550E0 , 15.528E0 , 15.499E0 , 16.131E0 , 16.438E0 , 16.387E0 , 16.549E0 , 16.872E0 , 16.830E0 , 16.926E0 , 16.907E0 , 16.966E0 , 17.060E0 , 17.122E0 , 17.311E0 , 17.355E0 , 17.668E0 , 17.767E0 , 17.803E0 , 17.765E0 , 17.768E0 , 17.736E0 , 17.858E0 , 17.877E0 , 17.912E0 , 18.046E0 , 18.085E0 , 18.291E0 , 18.357E0 , 18.426E0 , 18.584E0 , 18.610E0 , 18.870E0 , 18.795E0 , 19.111E0 , .367E0 , .796E0 , 0.892E0 , 1.903E0 , 2.150E0 , 3.697E0 , 5.870E0 , 6.421E0 , 7.422E0 , 9.944E0 , 11.023E0 , 11.87E0  , 12.786E0 , 14.067E0 , 13.974E0 , 14.462E0 , 14.464E0 , 15.381E0 , 15.483E0 , 15.59E0  , 16.075E0 , 16.347E0 , 16.181E0 , 16.915E0 , 17.003E0 , 16.978E0 , 17.756E0 , 17.808E0 , 17.868E0 , 18.481E0 , 18.486E0 , 19.090E0 , 16.062E0 , 16.337E0 , 16.345E0 ,
+        16.388E0 , 17.159E0 , 17.116E0 , 17.164E0 , 17.123E0 , 17.979E0 , 17.974E0 , 18.007E0 , 17.993E0 , 18.523E0 , 18.669E0 , 18.617E0 , 19.371E0 , 19.330E0 , 0.080E0 , 0.248E0 , 1.089E0 , 1.418E0 , 2.278E0 , 3.624E0 , 4.574E0 , 5.556E0 , 7.267E0 , 7.695E0 , 9.136E0 , 9.959E0 , 9.957E0 , 11.600E0 , 13.138E0 , 13.564E0 , 13.871E0 , 13.994E0 , 14.947E0 , 15.473E0 , 15.379E0 , 15.455E0 , 15.908E0 , 16.114E0 , 17.071E0 , 17.135E0 , 17.282E0 , 17.368E0 , 17.483E0 , 17.764E0 , 18.185E0 , 18.271E0 , 18.236E0 , 18.237E0 , 18.523E0 , 18.627E0 , 18.665E0 , 19.086E0 , 0.214E0 , 0.943E0 , 1.429E0 , 2.241E0 , 2.951E0 , 3.782E0 , 4.757E0 , 5.602E0 , 7.169E0 , 8.920E0 , 10.055E0 , 12.035E0 , 12.861E0 , 13.436E0 , 14.167E0 , 14.755E0 , 15.168E0 , 15.651E0 , 15.746E0 , 16.216E0 , 16.445E0 , 16.965E0 , 17.121E0 , 17.206E0 , 17.250E0 , 17.339E0 , 17.793E0 , 18.123E0 , 18.49E0  , 18.566E0 , 18.645E0 , 18.706E0 , 18.924E0 , 19.1E0   , 0.375E0 , 0.471E0 , 1.504E0 , 2.204E0 , 2.813E0 , 4.765E0 , 9.835E0 , 10.040E0 , 11.946E0 , 12.596E0 , 
+13.303E0 , 13.922E0 , 14.440E0 , 14.951E0 , 15.627E0 , 15.639E0 , 15.814E0 , 16.315E0 , 16.334E0 , 16.430E0 , 16.423E0 , 17.024E0 , 17.009E0 , 17.165E0 , 17.134E0 , 17.349E0 , 17.576E0 , 17.848E0 , 18.090E0 , 18.276E0 , 18.404E0 , 18.519E0 , 19.133E0 , 19.074E0 , 19.239E0 , 19.280E0 , 19.101E0 , 19.398E0 , 19.252E0 , 19.89E0  , 20.007E0 , 19.929E0 , 19.268E0 , 19.324E0 , 20.049E0 , 20.107E0 , 20.062E0 , 20.065E0 , 19.286E0 , 19.972E0 , 20.088E0 , 20.743E0 , 20.83E0  , 20.935E0 , 21.035E0 , 20.93E0  , 21.074E0 , 21.085E0 , 20.935E0 };
+
+        //        int called=0; printf("call hahn1_functor with  iflag=%d, called=%d\n", iflag, called); if (iflag==1) called++;
+
+        assert(b.size()==7);
+        assert(fvec.size()==236);
+        for(int i=0; i<236; i++) {
+            double x=m_x[i], xx=x*x, xxx=xx*x;
+            fvec[i] = (b[0]+b[1]*x+b[2]*xx+b[3]*xxx) / (1.+b[4]*x+b[5]*xx+b[6]*xxx) - m_y[i];
+        }
+        return 0;
+    }
+
+    int df(const VectorXd &b, MatrixXd &fjac)
+    {
+        assert(b.size()==7);
+        assert(fjac.rows()==236);
+        assert(fjac.cols()==7);
+        for(int i=0; i<236; i++) {
+            double x=m_x[i], xx=x*x, xxx=xx*x;
+            double fact = 1./(1.+b[4]*x+b[5]*xx+b[6]*xxx);
+            fjac(i,0) = 1.*fact;
+            fjac(i,1) = x*fact;
+            fjac(i,2) = xx*fact;
+            fjac(i,3) = xxx*fact;
+            fact = - (b[0]+b[1]*x+b[2]*xx+b[3]*xxx) * fact * fact;
+            fjac(i,4) = x*fact;
+            fjac(i,5) = xx*fact;
+            fjac(i,6) = xxx*fact;
+        }
+        return 0;
+    }
+};
+const double hahn1_functor::m_x[236] = { 24.41E0 , 34.82E0 , 44.09E0 , 45.07E0 , 54.98E0 , 65.51E0 , 70.53E0 , 75.70E0 , 89.57E0 , 91.14E0 , 96.40E0 , 97.19E0 , 114.26E0 , 120.25E0 , 127.08E0 , 133.55E0 , 133.61E0 , 158.67E0 , 172.74E0 , 171.31E0 , 202.14E0 , 220.55E0 , 221.05E0 , 221.39E0 , 250.99E0 , 268.99E0 , 271.80E0 , 271.97E0 , 321.31E0 , 321.69E0 , 330.14E0 , 333.03E0 , 333.47E0 , 340.77E0 , 345.65E0 , 373.11E0 , 373.79E0 , 411.82E0 , 419.51E0 , 421.59E0 , 422.02E0 , 422.47E0 , 422.61E0 , 441.75E0 , 447.41E0 , 448.7E0  , 472.89E0 , 476.69E0 , 522.47E0 , 522.62E0 , 524.43E0 , 546.75E0 , 549.53E0 , 575.29E0 , 576.00E0 , 625.55E0 , 20.15E0 , 28.78E0 , 29.57E0 , 37.41E0 , 39.12E0 , 50.24E0 , 61.38E0 , 66.25E0 , 73.42E0 , 95.52E0 , 107.32E0 , 122.04E0 , 134.03E0 , 163.19E0 , 163.48E0 , 175.70E0 , 179.86E0 , 211.27E0 , 217.78E0 , 219.14E0 , 262.52E0 , 268.01E0 , 268.62E0 , 336.25E0 , 337.23E0 , 339.33E0 , 427.38E0 , 428.58E0 , 432.68E0 , 528.99E0 , 531.08E0 , 628.34E0 , 253.24E0 , 273.13E0 , 273.66E0 ,
+282.10E0 , 346.62E0 , 347.19E0 , 348.78E0 , 351.18E0 , 450.10E0 , 450.35E0 , 451.92E0 , 455.56E0 , 552.22E0 , 553.56E0 , 555.74E0 , 652.59E0 , 656.20E0 , 14.13E0 , 20.41E0 , 31.30E0 , 33.84E0 , 39.70E0 , 48.83E0 , 54.50E0 , 60.41E0 , 72.77E0 , 75.25E0 , 86.84E0 , 94.88E0 , 96.40E0 , 117.37E0 , 139.08E0 , 147.73E0 , 158.63E0 , 161.84E0 , 192.11E0 , 206.76E0 , 209.07E0 , 213.32E0 , 226.44E0 , 237.12E0 , 330.90E0 , 358.72E0 , 370.77E0 , 372.72E0 , 396.24E0 , 416.59E0 , 484.02E0 , 495.47E0 , 514.78E0 , 515.65E0 , 519.47E0 , 544.47E0 , 560.11E0 , 620.77E0 , 18.97E0 , 28.93E0 , 33.91E0 , 40.03E0 , 44.66E0 , 49.87E0 , 55.16E0 , 60.90E0 , 72.08E0 , 85.15E0 , 97.06E0 , 119.63E0 , 133.27E0 , 143.84E0 , 161.91E0 , 180.67E0 , 198.44E0 , 226.86E0 , 229.65E0 , 258.27E0 , 273.77E0 , 339.15E0 , 350.13E0 , 362.75E0 , 371.03E0 , 393.32E0 , 448.53E0 , 473.78E0 , 511.12E0 , 524.70E0 , 548.75E0 , 551.64E0 , 574.02E0 , 623.86E0 , 21.46E0 , 24.33E0 , 33.43E0 , 39.22E0 , 44.18E0 , 55.02E0 , 94.33E0 , 96.44E0 , 118.82E0 , 128.48E0 ,
+141.94E0 , 156.92E0 , 171.65E0 , 190.00E0 , 223.26E0 , 223.88E0 , 231.50E0 , 265.05E0 , 269.44E0 , 271.78E0 , 273.46E0 , 334.61E0 , 339.79E0 , 349.52E0 , 358.18E0 , 377.98E0 , 394.77E0 , 429.66E0 , 468.22E0 , 487.27E0 , 519.54E0 , 523.03E0 , 612.99E0 , 638.59E0 , 641.36E0 , 622.05E0 , 631.50E0 , 663.97E0 , 646.9E0  , 748.29E0 , 749.21E0 , 750.14E0 , 647.04E0 , 646.89E0 , 746.9E0  , 748.43E0 , 747.35E0 , 749.27E0 , 647.61E0 , 747.78E0 , 750.51E0 , 851.37E0 , 845.97E0 , 847.54E0 , 849.93E0 , 851.61E0 , 849.75E0 , 850.98E0 , 848.23E0};
+
+// http://www.itl.nist.gov/div898/strd/nls/data/hahn1.shtml
+void testNistHahn1(void)
+{
+  const int  n=7;
+  int info;
+
+  VectorXd x(n);
+
+  /*
+   * First try
+   */
+  x<< 10., -1., .05, -.00001, -.05, .001, -.000001;
+  // do the computation
+  hahn1_functor functor;
+  LevenbergMarquardt<hahn1_functor> lm(functor);
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 11);
+  VERIFY_IS_EQUAL(lm.njev, 10);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 1.5324382854E+00);
+  // check x
+  VERIFY_IS_APPROX(x[0], 1.0776351733E+00);
+  VERIFY_IS_APPROX(x[1],-1.2269296921E-01);
+  VERIFY_IS_APPROX(x[2], 4.0863750610E-03);
+  VERIFY_IS_APPROX(x[3],-1.426264e-06); // shoulde be : -1.4262662514E-06
+  VERIFY_IS_APPROX(x[4],-5.7609940901E-03);
+  VERIFY_IS_APPROX(x[5], 2.4053735503E-04);
+  VERIFY_IS_APPROX(x[6],-1.2314450199E-07);
+
+  /*
+   * Second try
+   */
+  x<< .1, -.1, .005, -.000001, -.005, .0001, -.0000001;
+  // do the computation
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 11);
+  VERIFY_IS_EQUAL(lm.njev, 10);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 1.5324382854E+00);
+  // check x
+  VERIFY_IS_APPROX(x[0], 1.077640); // should be :  1.0776351733E+00
+  VERIFY_IS_APPROX(x[1], -0.1226933); // should be : -1.2269296921E-01
+  VERIFY_IS_APPROX(x[2], 0.004086383); // should be : 4.0863750610E-03
+  VERIFY_IS_APPROX(x[3], -1.426277e-06); // shoulde be : -1.4262662514E-06
+  VERIFY_IS_APPROX(x[4],-5.7609940901E-03);
+  VERIFY_IS_APPROX(x[5], 0.00024053772); // should be : 2.4053735503E-04
+  VERIFY_IS_APPROX(x[6], -1.231450e-07); // should be : -1.2314450199E-07
+
+}
+
+struct misra1d_functor : Functor<double>
+{
+    misra1d_functor(void) : Functor<double>(2,14) {}
+    static const double x[14];
+    static const double y[14];
+    int operator()(const VectorXd &b, VectorXd &fvec)
+    {
+        assert(b.size()==2);
+        assert(fvec.size()==14);
+        for(int i=0; i<14; i++) {
+            fvec[i] = b[0]*b[1]*x[i]/(1.+b[1]*x[i]) - y[i];
+        }
+        return 0;
+    }
+    int df(const VectorXd &b, MatrixXd &fjac)
+    {
+        assert(b.size()==2);
+        assert(fjac.rows()==14);
+        assert(fjac.cols()==2);
+        for(int i=0; i<14; i++) {
+            double den = 1.+b[1]*x[i];
+            fjac(i,0) = b[1]*x[i] / den;
+            fjac(i,1) = b[0]*x[i]*(den-b[1]*x[i])/den/den;
+        }
+        return 0;
+    }
+};
+const double misra1d_functor::x[14] = { 77.6E0, 114.9E0, 141.1E0, 190.8E0, 239.9E0, 289.0E0, 332.8E0, 378.4E0, 434.8E0, 477.3E0, 536.8E0, 593.1E0, 689.1E0, 760.0E0};
+const double misra1d_functor::y[14] = { 10.07E0, 14.73E0, 17.94E0, 23.93E0, 29.61E0, 35.18E0, 40.02E0, 44.82E0, 50.76E0, 55.05E0, 61.01E0, 66.40E0, 75.47E0, 81.78E0};
+
+// http://www.i
