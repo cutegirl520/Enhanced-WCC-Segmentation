@@ -925,4 +925,388 @@ struct misra1d_functor : Functor<double>
 const double misra1d_functor::x[14] = { 77.6E0, 114.9E0, 141.1E0, 190.8E0, 239.9E0, 289.0E0, 332.8E0, 378.4E0, 434.8E0, 477.3E0, 536.8E0, 593.1E0, 689.1E0, 760.0E0};
 const double misra1d_functor::y[14] = { 10.07E0, 14.73E0, 17.94E0, 23.93E0, 29.61E0, 35.18E0, 40.02E0, 44.82E0, 50.76E0, 55.05E0, 61.01E0, 66.40E0, 75.47E0, 81.78E0};
 
-// http://www.i
+// http://www.itl.nist.gov/div898/strd/nls/data/misra1d.shtml
+void testNistMisra1d(void)
+{
+  const int n=2;
+  int info;
+
+  VectorXd x(n);
+
+  /*
+   * First try
+   */
+  x<< 500., 0.0001;
+  // do the computation
+  misra1d_functor functor;
+  LevenbergMarquardt<misra1d_functor> lm(functor);
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 3);
+  VERIFY_IS_EQUAL(lm.nfev, 9);
+  VERIFY_IS_EQUAL(lm.njev, 7);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 5.6419295283E-02);
+  // check x
+  VERIFY_IS_APPROX(x[0], 4.3736970754E+02);
+  VERIFY_IS_APPROX(x[1], 3.0227324449E-04);
+
+  /*
+   * Second try
+   */
+  x<< 450., 0.0003;
+  // do the computation
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 4);
+  VERIFY_IS_EQUAL(lm.njev, 3);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 5.6419295283E-02);
+  // check x
+  VERIFY_IS_APPROX(x[0], 4.3736970754E+02);
+  VERIFY_IS_APPROX(x[1], 3.0227324449E-04);
+}
+
+
+struct lanczos1_functor : Functor<double>
+{
+    lanczos1_functor(void) : Functor<double>(6,24) {}
+    static const double x[24];
+    static const double y[24];
+    int operator()(const VectorXd &b, VectorXd &fvec)
+    {
+        assert(b.size()==6);
+        assert(fvec.size()==24);
+        for(int i=0; i<24; i++)
+            fvec[i] = b[0]*exp(-b[1]*x[i]) + b[2]*exp(-b[3]*x[i]) + b[4]*exp(-b[5]*x[i])  - y[i];
+        return 0;
+    }
+    int df(const VectorXd &b, MatrixXd &fjac)
+    {
+        assert(b.size()==6);
+        assert(fjac.rows()==24);
+        assert(fjac.cols()==6);
+        for(int i=0; i<24; i++) {
+            fjac(i,0) = exp(-b[1]*x[i]);
+            fjac(i,1) = -b[0]*x[i]*exp(-b[1]*x[i]);
+            fjac(i,2) = exp(-b[3]*x[i]);
+            fjac(i,3) = -b[2]*x[i]*exp(-b[3]*x[i]);
+            fjac(i,4) = exp(-b[5]*x[i]);
+            fjac(i,5) = -b[4]*x[i]*exp(-b[5]*x[i]);
+        }
+        return 0;
+    }
+};
+const double lanczos1_functor::x[24] = { 0.000000000000E+00, 5.000000000000E-02, 1.000000000000E-01, 1.500000000000E-01, 2.000000000000E-01, 2.500000000000E-01, 3.000000000000E-01, 3.500000000000E-01, 4.000000000000E-01, 4.500000000000E-01, 5.000000000000E-01, 5.500000000000E-01, 6.000000000000E-01, 6.500000000000E-01, 7.000000000000E-01, 7.500000000000E-01, 8.000000000000E-01, 8.500000000000E-01, 9.000000000000E-01, 9.500000000000E-01, 1.000000000000E+00, 1.050000000000E+00, 1.100000000000E+00, 1.150000000000E+00 };
+const double lanczos1_functor::y[24] = { 2.513400000000E+00 ,2.044333373291E+00 ,1.668404436564E+00 ,1.366418021208E+00 ,1.123232487372E+00 ,9.268897180037E-01 ,7.679338563728E-01 ,6.388775523106E-01 ,5.337835317402E-01 ,4.479363617347E-01 ,3.775847884350E-01 ,3.197393199326E-01 ,2.720130773746E-01 ,2.324965529032E-01 ,1.996589546065E-01 ,1.722704126914E-01 ,1.493405660168E-01 ,1.300700206922E-01 ,1.138119324644E-01 ,1.000415587559E-01 ,8.833209084540E-02 ,7.833544019350E-02 ,6.976693743449E-02 ,6.239312536719E-02 };
+
+// http://www.itl.nist.gov/div898/strd/nls/data/lanczos1.shtml
+void testNistLanczos1(void)
+{
+  const int n=6;
+  int info;
+
+  VectorXd x(n);
+
+  /*
+   * First try
+   */
+  x<< 1.2, 0.3, 5.6, 5.5, 6.5, 7.6;
+  // do the computation
+  lanczos1_functor functor;
+  LevenbergMarquardt<lanczos1_functor> lm(functor);
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 2);
+  VERIFY_IS_EQUAL(lm.nfev, 79);
+  VERIFY_IS_EQUAL(lm.njev, 72);
+  // check norm^2
+  std::cout.precision(30);
+  std::cout << lm.fvec.squaredNorm() << "\n";
+  VERIFY(lm.fvec.squaredNorm() <= 1.4307867721E-25);
+  // check x
+  VERIFY_IS_APPROX(x[0], 9.5100000027E-02);
+  VERIFY_IS_APPROX(x[1], 1.0000000001E+00);
+  VERIFY_IS_APPROX(x[2], 8.6070000013E-01);
+  VERIFY_IS_APPROX(x[3], 3.0000000002E+00);
+  VERIFY_IS_APPROX(x[4], 1.5575999998E+00);
+  VERIFY_IS_APPROX(x[5], 5.0000000001E+00);
+
+  /*
+   * Second try
+   */
+  x<< 0.5, 0.7, 3.6, 4.2, 4., 6.3;
+  // do the computation
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 2);
+  VERIFY_IS_EQUAL(lm.nfev, 9);
+  VERIFY_IS_EQUAL(lm.njev, 8);
+  // check norm^2
+  VERIFY(lm.fvec.squaredNorm() <= 1.4307867721E-25);
+  // check x
+  VERIFY_IS_APPROX(x[0], 9.5100000027E-02);
+  VERIFY_IS_APPROX(x[1], 1.0000000001E+00);
+  VERIFY_IS_APPROX(x[2], 8.6070000013E-01);
+  VERIFY_IS_APPROX(x[3], 3.0000000002E+00);
+  VERIFY_IS_APPROX(x[4], 1.5575999998E+00);
+  VERIFY_IS_APPROX(x[5], 5.0000000001E+00);
+
+}
+
+struct rat42_functor : Functor<double>
+{
+    rat42_functor(void) : Functor<double>(3,9) {}
+    static const double x[9];
+    static const double y[9];
+    int operator()(const VectorXd &b, VectorXd &fvec)
+    {
+        assert(b.size()==3);
+        assert(fvec.size()==9);
+        for(int i=0; i<9; i++) {
+            fvec[i] = b[0] / (1.+exp(b[1]-b[2]*x[i])) - y[i];
+        }
+        return 0;
+    }
+
+    int df(const VectorXd &b, MatrixXd &fjac)
+    {
+        assert(b.size()==3);
+        assert(fjac.rows()==9);
+        assert(fjac.cols()==3);
+        for(int i=0; i<9; i++) {
+            double e = exp(b[1]-b[2]*x[i]);
+            fjac(i,0) = 1./(1.+e);
+            fjac(i,1) = -b[0]*e/(1.+e)/(1.+e);
+            fjac(i,2) = +b[0]*e*x[i]/(1.+e)/(1.+e);
+        }
+        return 0;
+    }
+};
+const double rat42_functor::x[9] = { 9.000E0, 14.000E0, 21.000E0, 28.000E0, 42.000E0, 57.000E0, 63.000E0, 70.000E0, 79.000E0 };
+const double rat42_functor::y[9] = { 8.930E0 ,10.800E0 ,18.590E0 ,22.330E0 ,39.350E0 ,56.110E0 ,61.730E0 ,64.620E0 ,67.080E0 };
+
+// http://www.itl.nist.gov/div898/strd/nls/data/ratkowsky2.shtml
+void testNistRat42(void)
+{
+  const int n=3;
+  int info;
+
+  VectorXd x(n);
+
+  /*
+   * First try
+   */
+  x<< 100., 1., 0.1;
+  // do the computation
+  rat42_functor functor;
+  LevenbergMarquardt<rat42_functor> lm(functor);
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 10);
+  VERIFY_IS_EQUAL(lm.njev, 8);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 8.0565229338E+00);
+  // check x
+  VERIFY_IS_APPROX(x[0], 7.2462237576E+01);
+  VERIFY_IS_APPROX(x[1], 2.6180768402E+00);
+  VERIFY_IS_APPROX(x[2], 6.7359200066E-02);
+
+  /*
+   * Second try
+   */
+  x<< 75., 2.5, 0.07;
+  // do the computation
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 6);
+  VERIFY_IS_EQUAL(lm.njev, 5);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 8.0565229338E+00);
+  // check x
+  VERIFY_IS_APPROX(x[0], 7.2462237576E+01);
+  VERIFY_IS_APPROX(x[1], 2.6180768402E+00);
+  VERIFY_IS_APPROX(x[2], 6.7359200066E-02);
+}
+
+struct MGH10_functor : Functor<double>
+{
+    MGH10_functor(void) : Functor<double>(3,16) {}
+    static const double x[16];
+    static const double y[16];
+    int operator()(const VectorXd &b, VectorXd &fvec)
+    {
+        assert(b.size()==3);
+        assert(fvec.size()==16);
+        for(int i=0; i<16; i++)
+            fvec[i] =  b[0] * exp(b[1]/(x[i]+b[2])) - y[i];
+        return 0;
+    }
+    int df(const VectorXd &b, MatrixXd &fjac)
+    {
+        assert(b.size()==3);
+        assert(fjac.rows()==16);
+        assert(fjac.cols()==3);
+        for(int i=0; i<16; i++) {
+            double factor = 1./(x[i]+b[2]);
+            double e = exp(b[1]*factor);
+            fjac(i,0) = e;
+            fjac(i,1) = b[0]*factor*e;
+            fjac(i,2) = -b[1]*b[0]*factor*factor*e;
+        }
+        return 0;
+    }
+};
+const double MGH10_functor::x[16] = { 5.000000E+01, 5.500000E+01, 6.000000E+01, 6.500000E+01, 7.000000E+01, 7.500000E+01, 8.000000E+01, 8.500000E+01, 9.000000E+01, 9.500000E+01, 1.000000E+02, 1.050000E+02, 1.100000E+02, 1.150000E+02, 1.200000E+02, 1.250000E+02 };
+const double MGH10_functor::y[16] = { 3.478000E+04, 2.861000E+04, 2.365000E+04, 1.963000E+04, 1.637000E+04, 1.372000E+04, 1.154000E+04, 9.744000E+03, 8.261000E+03, 7.030000E+03, 6.005000E+03, 5.147000E+03, 4.427000E+03, 3.820000E+03, 3.307000E+03, 2.872000E+03 };
+
+// http://www.itl.nist.gov/div898/strd/nls/data/mgh10.shtml
+void testNistMGH10(void)
+{
+  const int n=3;
+  int info;
+
+  VectorXd x(n);
+
+  /*
+   * First try
+   */
+  x<< 2., 400000., 25000.;
+  // do the computation
+  MGH10_functor functor;
+  LevenbergMarquardt<MGH10_functor> lm(functor);
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 2); 
+  VERIFY_IS_EQUAL(lm.nfev, 284 ); 
+  VERIFY_IS_EQUAL(lm.njev, 249 ); 
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 8.7945855171E+01);
+  // check x
+  VERIFY_IS_APPROX(x[0], 5.6096364710E-03);
+  VERIFY_IS_APPROX(x[1], 6.1813463463E+03);
+  VERIFY_IS_APPROX(x[2], 3.4522363462E+02);
+
+  /*
+   * Second try
+   */
+  x<< 0.02, 4000., 250.;
+  // do the computation
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 3);
+  VERIFY_IS_EQUAL(lm.nfev, 126);
+  VERIFY_IS_EQUAL(lm.njev, 116);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 8.7945855171E+01);
+  // check x
+  VERIFY_IS_APPROX(x[0], 5.6096364710E-03);
+  VERIFY_IS_APPROX(x[1], 6.1813463463E+03);
+  VERIFY_IS_APPROX(x[2], 3.4522363462E+02);
+}
+
+
+struct BoxBOD_functor : Functor<double>
+{
+    BoxBOD_functor(void) : Functor<double>(2,6) {}
+    static const double x[6];
+    int operator()(const VectorXd &b, VectorXd &fvec)
+    {
+        static const double y[6] = { 109., 149., 149., 191., 213., 224. };
+        assert(b.size()==2);
+        assert(fvec.size()==6);
+        for(int i=0; i<6; i++)
+            fvec[i] =  b[0]*(1.-exp(-b[1]*x[i])) - y[i];
+        return 0;
+    }
+    int df(const VectorXd &b, MatrixXd &fjac)
+    {
+        assert(b.size()==2);
+        assert(fjac.rows()==6);
+        assert(fjac.cols()==2);
+        for(int i=0; i<6; i++) {
+            double e = exp(-b[1]*x[i]);
+            fjac(i,0) = 1.-e;
+            fjac(i,1) = b[0]*x[i]*e;
+        }
+        return 0;
+    }
+};
+const double BoxBOD_functor::x[6] = { 1., 2., 3., 5., 7., 10. };
+
+// http://www.itl.nist.gov/div898/strd/nls/data/boxbod.shtml
+void testNistBoxBOD(void)
+{
+  const int n=2;
+  int info;
+
+  VectorXd x(n);
+
+  /*
+   * First try
+   */
+  x<< 1., 1.;
+  // do the computation
+  BoxBOD_functor functor;
+  LevenbergMarquardt<BoxBOD_functor> lm(functor);
+  lm.parameters.ftol = 1.E6*NumTraits<double>::epsilon();
+  lm.parameters.xtol = 1.E6*NumTraits<double>::epsilon();
+  lm.parameters.factor = 10.;
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY(lm.nfev < 31); // 31
+  VERIFY(lm.njev < 25); // 25
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 1.1680088766E+03);
+  // check x
+  VERIFY_IS_APPROX(x[0], 2.1380940889E+02);
+  VERIFY_IS_APPROX(x[1], 5.4723748542E-01);
+
+  /*
+   * Second try
+   */
+  x<< 100., 0.75;
+  // do the computation
+  lm.resetParameters();
+  lm.parameters.ftol = NumTraits<double>::epsilon();
+  lm.parameters.xtol = NumTraits<double>::epsilon();
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1); 
+  VERIFY_IS_EQUAL(lm.nfev, 15 ); 
+  VERIFY_IS_EQUAL(lm.njev, 14 ); 
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 1.1680088766E+03);
+  // check x
+  VERIFY_IS_APPROX(x[0], 2.1380940889E+02);
+  VERIFY_IS_APPROX(x[1], 5.4723748542E-01);
+}
+
+struct MGH17_functor : Functor<double>
+{
+    MGH17_functor(void) : Functor<double>(5,33) {}
+    static const double x[33];
+    static const double y[33];
+    int operator()(const VectorXd &b, VectorXd &fvec)
+    {
+        assert(b.size()==5);
+        assert(fvec.size()==33);
+        for(int i=0; i<33; i++)
+            fvec[i] =  b[0] + b[1]*exp(-b[3]*x[i]) +  b[2]*exp(-b[4]*x[i]) - y[i];
+        return 0;
+    }
+    int df(const VectorXd &b, MatrixXd &f
