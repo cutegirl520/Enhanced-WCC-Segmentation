@@ -1869,4 +1869,12 @@ void test_NonLinearOptimization()
   printf("fvec.blueNorm() : %.32g\n", lm.fvec.blueNorm());
 
   printf("info, nfev, njev : %d, %d, %d\n", info, lm.nfev, lm.njev);
-  printf("fvec.squaredN
+  printf("fvec.squaredNorm() : %.13g\n", lm.fvec.squaredNorm());
+  std::cout << x << std::endl;
+  std::cout.precision(9);
+  std::cout << x[0] << std::endl;
+  std::cout << x[1] << std::endl;
+  std::cout << x[2] << std::endl;
+  std::cout << x[3] << std::endl;
+*/
+
