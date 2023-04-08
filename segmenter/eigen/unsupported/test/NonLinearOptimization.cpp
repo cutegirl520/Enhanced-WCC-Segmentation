@@ -1535,3 +1535,338 @@ void testNistBennett5(void)
   VERIFY_IS_APPROX(x[0], -2.5235058043E+03);
   VERIFY_IS_APPROX(x[1], 4.6736564644E+01);
   VERIFY_IS_APPROX(x[2], 9.3218483193E-01);
+  /*
+   * Second try
+   */
+  x<< -1500., 45., 0.85;
+  // do the computation
+  lm.resetParameters();
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 203);
+  VERIFY_IS_EQUAL(lm.njev, 192);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 5.2404744073E-04);
+  // check x
+  VERIFY_IS_APPROX(x[0], -2523.3007865); // should be -2.5235058043E+03
+  VERIFY_IS_APPROX(x[1], 46.735705771); // should be 4.6736564644E+01);
+  VERIFY_IS_APPROX(x[2], 0.93219881891); // should be 9.3218483193E-01);
+}
+
+struct thurber_functor : Functor<double>
+{
+    thurber_functor(void) : Functor<double>(7,37) {}
+    static const double _x[37];
+    static const double _y[37];
+    int operator()(const VectorXd &b, VectorXd &fvec)
+    {
+        //        int called=0; printf("call hahn1_functor with  iflag=%d, called=%d\n", iflag, called); if (iflag==1) called++;
+        assert(b.size()==7);
+        assert(fvec.size()==37);
+        for(int i=0; i<37; i++) {
+            double x=_x[i], xx=x*x, xxx=xx*x;
+            fvec[i] = (b[0]+b[1]*x+b[2]*xx+b[3]*xxx) / (1.+b[4]*x+b[5]*xx+b[6]*xxx) - _y[i];
+        }
+        return 0;
+    }
+    int df(const VectorXd &b, MatrixXd &fjac)
+    {
+        assert(b.size()==7);
+        assert(fjac.rows()==37);
+        assert(fjac.cols()==7);
+        for(int i=0; i<37; i++) {
+            double x=_x[i], xx=x*x, xxx=xx*x;
+            double fact = 1./(1.+b[4]*x+b[5]*xx+b[6]*xxx);
+            fjac(i,0) = 1.*fact;
+            fjac(i,1) = x*fact;
+            fjac(i,2) = xx*fact;
+            fjac(i,3) = xxx*fact;
+            fact = - (b[0]+b[1]*x+b[2]*xx+b[3]*xxx) * fact * fact;
+            fjac(i,4) = x*fact;
+            fjac(i,5) = xx*fact;
+            fjac(i,6) = xxx*fact;
+        }
+        return 0;
+    }
+};
+const double thurber_functor::_x[37] = { -3.067E0, -2.981E0, -2.921E0, -2.912E0, -2.840E0, -2.797E0, -2.702E0, -2.699E0, -2.633E0, -2.481E0, -2.363E0, -2.322E0, -1.501E0, -1.460E0, -1.274E0, -1.212E0, -1.100E0, -1.046E0, -0.915E0, -0.714E0, -0.566E0, -0.545E0, -0.400E0, -0.309E0, -0.109E0, -0.103E0, 0.010E0, 0.119E0, 0.377E0, 0.790E0, 0.963E0, 1.006E0, 1.115E0, 1.572E0, 1.841E0, 2.047E0, 2.200E0 };
+const double thurber_functor::_y[37] = { 80.574E0, 84.248E0, 87.264E0, 87.195E0, 89.076E0, 89.608E0, 89.868E0, 90.101E0, 92.405E0, 95.854E0, 100.696E0, 101.060E0, 401.672E0, 390.724E0, 567.534E0, 635.316E0, 733.054E0, 759.087E0, 894.206E0, 990.785E0, 1090.109E0, 1080.914E0, 1122.643E0, 1178.351E0, 1260.531E0, 1273.514E0, 1288.339E0, 1327.543E0, 1353.863E0, 1414.509E0, 1425.208E0, 1421.384E0, 1442.962E0, 1464.350E0, 1468.705E0, 1447.894E0, 1457.628E0};
+
+// http://www.itl.nist.gov/div898/strd/nls/data/thurber.shtml
+void testNistThurber(void)
+{
+  const int n=7;
+  int info;
+
+  VectorXd x(n);
+
+  /*
+   * First try
+   */
+  x<< 1000 ,1000 ,400 ,40 ,0.7,0.3,0.0 ;
+  // do the computation
+  thurber_functor functor;
+  LevenbergMarquardt<thurber_functor> lm(functor);
+  lm.parameters.ftol = 1.E4*NumTraits<double>::epsilon();
+  lm.parameters.xtol = 1.E4*NumTraits<double>::epsilon();
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 39);
+  VERIFY_IS_EQUAL(lm.njev, 36);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 5.6427082397E+03);
+  // check x
+  VERIFY_IS_APPROX(x[0], 1.2881396800E+03);
+  VERIFY_IS_APPROX(x[1], 1.4910792535E+03);
+  VERIFY_IS_APPROX(x[2], 5.8323836877E+02);
+  VERIFY_IS_APPROX(x[3], 7.5416644291E+01);
+  VERIFY_IS_APPROX(x[4], 9.6629502864E-01);
+  VERIFY_IS_APPROX(x[5], 3.9797285797E-01);
+  VERIFY_IS_APPROX(x[6], 4.9727297349E-02);
+
+  /*
+   * Second try
+   */
+  x<< 1300 ,1500 ,500  ,75   ,1    ,0.4  ,0.05  ;
+  // do the computation
+  lm.resetParameters();
+  lm.parameters.ftol = 1.E4*NumTraits<double>::epsilon();
+  lm.parameters.xtol = 1.E4*NumTraits<double>::epsilon();
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 29);
+  VERIFY_IS_EQUAL(lm.njev, 28);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 5.6427082397E+03);
+  // check x
+  VERIFY_IS_APPROX(x[0], 1.2881396800E+03);
+  VERIFY_IS_APPROX(x[1], 1.4910792535E+03);
+  VERIFY_IS_APPROX(x[2], 5.8323836877E+02);
+  VERIFY_IS_APPROX(x[3], 7.5416644291E+01);
+  VERIFY_IS_APPROX(x[4], 9.6629502864E-01);
+  VERIFY_IS_APPROX(x[5], 3.9797285797E-01);
+  VERIFY_IS_APPROX(x[6], 4.9727297349E-02);
+}
+
+struct rat43_functor : Functor<double>
+{
+    rat43_functor(void) : Functor<double>(4,15) {}
+    static const double x[15];
+    static const double y[15];
+    int operator()(const VectorXd &b, VectorXd &fvec)
+    {
+        assert(b.size()==4);
+        assert(fvec.size()==15);
+        for(int i=0; i<15; i++)
+            fvec[i] = b[0] * pow(1.+exp(b[1]-b[2]*x[i]),-1./b[3]) - y[i];
+        return 0;
+    }
+    int df(const VectorXd &b, MatrixXd &fjac)
+    {
+        assert(b.size()==4);
+        assert(fjac.rows()==15);
+        assert(fjac.cols()==4);
+        for(int i=0; i<15; i++) {
+            double e = exp(b[1]-b[2]*x[i]);
+            double power = -1./b[3];
+            fjac(i,0) = pow(1.+e, power);
+            fjac(i,1) = power*b[0]*e*pow(1.+e, power-1.);
+            fjac(i,2) = -power*b[0]*e*x[i]*pow(1.+e, power-1.);
+            fjac(i,3) = b[0]*power*power*log(1.+e)*pow(1.+e, power);
+        }
+        return 0;
+    }
+};
+const double rat43_functor::x[15] = { 1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15. };
+const double rat43_functor::y[15] = { 16.08, 33.83, 65.80, 97.20, 191.55, 326.20, 386.87, 520.53, 590.03, 651.92, 724.93, 699.56, 689.96, 637.56, 717.41 };
+
+// http://www.itl.nist.gov/div898/strd/nls/data/ratkowsky3.shtml
+void testNistRat43(void)
+{
+  const int n=4;
+  int info;
+
+  VectorXd x(n);
+
+  /*
+   * First try
+   */
+  x<< 100., 10., 1., 1.;
+  // do the computation
+  rat43_functor functor;
+  LevenbergMarquardt<rat43_functor> lm(functor);
+  lm.parameters.ftol = 1.E6*NumTraits<double>::epsilon();
+  lm.parameters.xtol = 1.E6*NumTraits<double>::epsilon();
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 27);
+  VERIFY_IS_EQUAL(lm.njev, 20);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 8.7864049080E+03);
+  // check x
+  VERIFY_IS_APPROX(x[0], 6.9964151270E+02);
+  VERIFY_IS_APPROX(x[1], 5.2771253025E+00);
+  VERIFY_IS_APPROX(x[2], 7.5962938329E-01);
+  VERIFY_IS_APPROX(x[3], 1.2792483859E+00);
+
+  /*
+   * Second try
+   */
+  x<< 700., 5., 0.75, 1.3;
+  // do the computation
+  lm.resetParameters();
+  lm.parameters.ftol = 1.E5*NumTraits<double>::epsilon();
+  lm.parameters.xtol = 1.E5*NumTraits<double>::epsilon();
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 9);
+  VERIFY_IS_EQUAL(lm.njev, 8);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 8.7864049080E+03);
+  // check x
+  VERIFY_IS_APPROX(x[0], 6.9964151270E+02);
+  VERIFY_IS_APPROX(x[1], 5.2771253025E+00);
+  VERIFY_IS_APPROX(x[2], 7.5962938329E-01);
+  VERIFY_IS_APPROX(x[3], 1.2792483859E+00);
+}
+
+
+
+struct eckerle4_functor : Functor<double>
+{
+    eckerle4_functor(void) : Functor<double>(3,35) {}
+    static const double x[35];
+    static const double y[35];
+    int operator()(const VectorXd &b, VectorXd &fvec)
+    {
+        assert(b.size()==3);
+        assert(fvec.size()==35);
+        for(int i=0; i<35; i++)
+            fvec[i] = b[0]/b[1] * exp(-0.5*(x[i]-b[2])*(x[i]-b[2])/(b[1]*b[1])) - y[i];
+        return 0;
+    }
+    int df(const VectorXd &b, MatrixXd &fjac)
+    {
+        assert(b.size()==3);
+        assert(fjac.rows()==35);
+        assert(fjac.cols()==3);
+        for(int i=0; i<35; i++) {
+            double b12 = b[1]*b[1];
+            double e = exp(-0.5*(x[i]-b[2])*(x[i]-b[2])/b12);
+            fjac(i,0) = e / b[1];
+            fjac(i,1) = ((x[i]-b[2])*(x[i]-b[2])/b12-1.) * b[0]*e/b12;
+            fjac(i,2) = (x[i]-b[2])*e*b[0]/b[1]/b12;
+        }
+        return 0;
+    }
+};
+const double eckerle4_functor::x[35] = { 400.0, 405.0, 410.0, 415.0, 420.0, 425.0, 430.0, 435.0, 436.5, 438.0, 439.5, 441.0, 442.5, 444.0, 445.5, 447.0, 448.5, 450.0, 451.5, 453.0, 454.5, 456.0, 457.5, 459.0, 460.5, 462.0, 463.5, 465.0, 470.0, 475.0, 480.0, 485.0, 490.0, 495.0, 500.0};
+const double eckerle4_functor::y[35] = { 0.0001575, 0.0001699, 0.0002350, 0.0003102, 0.0004917, 0.0008710, 0.0017418, 0.0046400, 0.0065895, 0.0097302, 0.0149002, 0.0237310, 0.0401683, 0.0712559, 0.1264458, 0.2073413, 0.2902366, 0.3445623, 0.3698049, 0.3668534, 0.3106727, 0.2078154, 0.1164354, 0.0616764, 0.0337200, 0.0194023, 0.0117831, 0.0074357, 0.0022732, 0.0008800, 0.0004579, 0.0002345, 0.0001586, 0.0001143, 0.0000710 };
+
+// http://www.itl.nist.gov/div898/strd/nls/data/eckerle4.shtml
+void testNistEckerle4(void)
+{
+  const int n=3;
+  int info;
+
+  VectorXd x(n);
+
+  /*
+   * First try
+   */
+  x<< 1., 10., 500.;
+  // do the computation
+  eckerle4_functor functor;
+  LevenbergMarquardt<eckerle4_functor> lm(functor);
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 18);
+  VERIFY_IS_EQUAL(lm.njev, 15);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 1.4635887487E-03);
+  // check x
+  VERIFY_IS_APPROX(x[0], 1.5543827178);
+  VERIFY_IS_APPROX(x[1], 4.0888321754);
+  VERIFY_IS_APPROX(x[2], 4.5154121844E+02);
+
+  /*
+   * Second try
+   */
+  x<< 1.5, 5., 450.;
+  // do the computation
+  info = lm.minimize(x);
+
+  // check return value
+  VERIFY_IS_EQUAL(info, 1);
+  VERIFY_IS_EQUAL(lm.nfev, 7);
+  VERIFY_IS_EQUAL(lm.njev, 6);
+  // check norm^2
+  VERIFY_IS_APPROX(lm.fvec.squaredNorm(), 1.4635887487E-03);
+  // check x
+  VERIFY_IS_APPROX(x[0], 1.5543827178);
+  VERIFY_IS_APPROX(x[1], 4.0888321754);
+  VERIFY_IS_APPROX(x[2], 4.5154121844E+02);
+}
+
+void test_NonLinearOptimization()
+{
+    // Tests using the examples provided by (c)minpack
+    CALL_SUBTEST/*_1*/(testChkder());
+    CALL_SUBTEST/*_1*/(testLmder1());
+    CALL_SUBTEST/*_1*/(testLmder());
+    CALL_SUBTEST/*_2*/(testHybrj1());
+    CALL_SUBTEST/*_2*/(testHybrj());
+    CALL_SUBTEST/*_2*/(testHybrd1());
+    CALL_SUBTEST/*_2*/(testHybrd());
+    CALL_SUBTEST/*_3*/(testLmstr1());
+    CALL_SUBTEST/*_3*/(testLmstr());
+    CALL_SUBTEST/*_3*/(testLmdif1());
+    CALL_SUBTEST/*_3*/(testLmdif());
+
+    // NIST tests, level of difficulty = "Lower"
+    CALL_SUBTEST/*_4*/(testNistMisra1a());
+    CALL_SUBTEST/*_4*/(testNistChwirut2());
+
+    // NIST tests, level of difficulty = "Average"
+    CALL_SUBTEST/*_5*/(testNistHahn1());
+    CALL_SUBTEST/*_6*/(testNistMisra1d());
+    CALL_SUBTEST/*_7*/(testNistMGH17());
+    CALL_SUBTEST/*_8*/(testNistLanczos1());
+
+//     // NIST tests, level of difficulty = "Higher"
+    CALL_SUBTEST/*_9*/(testNistRat42());
+//     CALL_SUBTEST/*_10*/(testNistMGH10());
+    CALL_SUBTEST/*_11*/(testNistBoxBOD());
+//     CALL_SUBTEST/*_12*/(testNistMGH09());
+    CALL_SUBTEST/*_13*/(testNistBennett5());
+    CALL_SUBTEST/*_14*/(testNistThurber());
+    CALL_SUBTEST/*_15*/(testNistRat43());
+    CALL_SUBTEST/*_16*/(testNistEckerle4());
+}
+
+/*
+ * Can be useful for debugging...
+  printf("info, nfev : %d, %d\n", info, lm.nfev);
+  printf("info, nfev, njev : %d, %d, %d\n", info, solver.nfev, solver.njev);
+  printf("info, nfev : %d, %d\n", info, solver.nfev);
+  printf("x[0] : %.32g\n", x[0]);
+  printf("x[1] : %.32g\n", x[1]);
+  printf("x[2] : %.32g\n", x[2]);
+  printf("x[3] : %.32g\n", x[3]);
+  printf("fvec.blueNorm() : %.32g\n", solver.fvec.blueNorm());
+  printf("fvec.blueNorm() : %.32g\n", lm.fvec.blueNorm());
+
+  printf("info, nfev, njev : %d, %d, %d\n", info, lm.nfev, lm.njev);
+  printf("fvec.squaredN
