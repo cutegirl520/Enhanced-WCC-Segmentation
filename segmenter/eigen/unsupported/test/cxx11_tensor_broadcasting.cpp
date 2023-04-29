@@ -164,4 +164,31 @@ static void test_fixed_size_broadcasting()
 #if 0
   Tensor<float, 1, DataLayout> t1(10);
   t1.setRandom();
-  TensorFixedSize<float, Size
+  TensorFixedSize<float, Sizes<1>, DataLayout> t2;
+  t2 = t2.constant(20.0f);
+
+  Tensor<float, 1, DataLayout> t3 = t1 + t2.broadcast(Eigen::array<int, 1>{{10}});
+  for (int i = 0; i < 10; ++i) {
+    VERIFY_IS_APPROX(t3(i), t1(i) + t2(0));
+  }
+
+  TensorMap<TensorFixedSize<float, Sizes<1>, DataLayout> > t4(t2.data(), {{1}});
+  Tensor<float, 1, DataLayout> t5 = t1 + t4.broadcast(Eigen::array<int, 1>{{10}});
+  for (int i = 0; i < 10; ++i) {
+    VERIFY_IS_APPROX(t5(i), t1(i) + t2(0));
+  }
+#endif
+}
+
+
+void test_cxx11_tensor_broadcasting()
+{
+  CALL_SUBTEST(test_simple_broadcasting<ColMajor>());
+  CALL_SUBTEST(test_simple_broadcasting<RowMajor>());
+  CALL_SUBTEST(test_vectorized_broadcasting<ColMajor>());
+  CALL_SUBTEST(test_vectorized_broadcasting<RowMajor>());
+  CALL_SUBTEST(test_static_broadcasting<ColMajor>());
+  CALL_SUBTEST(test_static_broadcasting<RowMajor>());
+  CALL_SUBTEST(test_fixed_size_broadcasting<ColMajor>());
+  CALL_SUBTEST(test_fixed_size_broadcasting<RowMajor>());
+}
