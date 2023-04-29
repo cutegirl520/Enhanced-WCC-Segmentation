@@ -553,4 +553,374 @@ void test_cuda_convolution_3d()
                                    input(i,j+0,k+1,l+1,m) * kernel(0,1,1) +
                                    input(i,j+1,k+1,l+1,m) * kernel(1,1,1) +
                                    input(i,j+2,k+1,l+1,m) * kernel(2,1,1) +
-       
+                                   input(i,j+0,k+2,l+1,m) * kernel(0,2,1) +
+                                   input(i,j+1,k+2,l+1,m) * kernel(1,2,1) +
+                                   input(i,j+2,k+2,l+1,m) * kernel(2,2,1) +
+                                   input(i,j+0,k+3,l+1,m) * kernel(0,3,1) +
+                                   input(i,j+1,k+3,l+1,m) * kernel(1,3,1) +
+                                   input(i,j+2,k+3,l+1,m) * kernel(2,3,1);
+            VERIFY_IS_APPROX(result, expected);
+          }
+        }
+      }
+    }
+  }
+
+  cudaFree(d_input);
+  cudaFree(d_kernel);
+  cudaFree(d_out);
+}
+
+
+template <typename Scalar>
+void test_cuda_lgamma(const Scalar stddev)
+{
+  Tensor<Scalar, 2> in(72,97);
+  in.setRandom();
+  in *= in.constant(stddev);
+  Tensor<Scalar, 2> out(72,97);
+  out.setZero();
+
+  std::size_t bytes = in.size() * sizeof(Scalar);
+
+  Scalar* d_in;
+  Scalar* d_out;
+  cudaMalloc((void**)(&d_in), bytes);
+  cudaMalloc((void**)(&d_out), bytes);
+
+  cudaMemcpy(d_in, in.data(), bytes, cudaMemcpyHostToDevice);
+
+  Eigen::CudaStreamDevice stream;
+  Eigen::GpuDevice gpu_device(&stream);
+
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 2> > gpu_in(d_in, 72, 97);
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 2> > gpu_out(d_out, 72, 97);
+
+  gpu_out.device(gpu_device) = gpu_in.lgamma();
+
+  assert(cudaMemcpyAsync(out.data(), d_out, bytes, cudaMemcpyDeviceToHost, gpu_device.stream()) == cudaSuccess);
+  assert(cudaStreamSynchronize(gpu_device.stream()) == cudaSuccess);
+
+  for (int i = 0; i < 72; ++i) {
+    for (int j = 0; j < 97; ++j) {
+      VERIFY_IS_APPROX(out(i,j), (std::lgamma)(in(i,j)));
+    }
+  }
+
+  cudaFree(d_in);
+  cudaFree(d_out);
+}
+
+template <typename Scalar>
+void test_cuda_digamma()
+{
+  Tensor<Scalar, 1> in(7);
+  Tensor<Scalar, 1> out(7);
+  Tensor<Scalar, 1> expected_out(7);
+  out.setZero();
+
+  in(0) = Scalar(1);
+  in(1) = Scalar(1.5);
+  in(2) = Scalar(4);
+  in(3) = Scalar(-10.5);
+  in(4) = Scalar(10000.5);
+  in(5) = Scalar(0);
+  in(6) = Scalar(-1);
+
+  expected_out(0) = Scalar(-0.5772156649015329);
+  expected_out(1) = Scalar(0.03648997397857645);
+  expected_out(2) = Scalar(1.2561176684318);
+  expected_out(3) = Scalar(2.398239129535781);
+  expected_out(4) = Scalar(9.210340372392849);
+  expected_out(5) = std::numeric_limits<Scalar>::infinity();
+  expected_out(6) = std::numeric_limits<Scalar>::infinity();
+
+  std::size_t bytes = in.size() * sizeof(Scalar);
+
+  Scalar* d_in;
+  Scalar* d_out;
+  cudaMalloc((void**)(&d_in), bytes);
+  cudaMalloc((void**)(&d_out), bytes);
+
+  cudaMemcpy(d_in, in.data(), bytes, cudaMemcpyHostToDevice);
+
+  Eigen::CudaStreamDevice stream;
+  Eigen::GpuDevice gpu_device(&stream);
+
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 1> > gpu_in(d_in, 7);
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 1> > gpu_out(d_out, 7);
+
+  gpu_out.device(gpu_device) = gpu_in.digamma();
+
+  assert(cudaMemcpyAsync(out.data(), d_out, bytes, cudaMemcpyDeviceToHost, gpu_device.stream()) == cudaSuccess);
+  assert(cudaStreamSynchronize(gpu_device.stream()) == cudaSuccess);
+
+  for (int i = 0; i < 5; ++i) {
+    VERIFY_IS_APPROX(out(i), expected_out(i));
+  }
+  for (int i = 5; i < 7; ++i) {
+    VERIFY_IS_EQUAL(out(i), expected_out(i));
+  }
+
+  cudaFree(d_in);
+  cudaFree(d_out);
+}
+
+template <typename Scalar>
+void test_cuda_zeta()
+{
+  Tensor<Scalar, 1> in_x(6);
+  Tensor<Scalar, 1> in_q(6);
+  Tensor<Scalar, 1> out(6);
+  Tensor<Scalar, 1> expected_out(6);
+  out.setZero();
+
+  in_x(0) = Scalar(1);
+  in_x(1) = Scalar(1.5);
+  in_x(2) = Scalar(4);
+  in_x(3) = Scalar(-10.5);
+  in_x(4) = Scalar(10000.5);
+  in_x(5) = Scalar(3);
+  
+  in_q(0) = Scalar(1.2345);
+  in_q(1) = Scalar(2);
+  in_q(2) = Scalar(1.5);
+  in_q(3) = Scalar(3);
+  in_q(4) = Scalar(1.0001);
+  in_q(5) = Scalar(-2.5);
+
+  expected_out(0) = std::numeric_limits<Scalar>::infinity();
+  expected_out(1) = Scalar(1.61237534869);
+  expected_out(2) = Scalar(0.234848505667);
+  expected_out(3) = Scalar(1.03086757337e-5);
+  expected_out(4) = Scalar(0.367879440865);
+  expected_out(5) = Scalar(0.054102025820864097);
+
+  std::size_t bytes = in_x.size() * sizeof(Scalar);
+
+  Scalar* d_in_x;
+  Scalar* d_in_q;
+  Scalar* d_out;
+  cudaMalloc((void**)(&d_in_x), bytes);
+  cudaMalloc((void**)(&d_in_q), bytes);
+  cudaMalloc((void**)(&d_out), bytes);
+
+  cudaMemcpy(d_in_x, in_x.data(), bytes, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_in_q, in_q.data(), bytes, cudaMemcpyHostToDevice);
+  
+  Eigen::CudaStreamDevice stream;
+  Eigen::GpuDevice gpu_device(&stream);
+
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 1> > gpu_in_x(d_in_x, 6);
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 1> > gpu_in_q(d_in_q, 6);
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 1> > gpu_out(d_out, 6);
+
+  gpu_out.device(gpu_device) = gpu_in_x.zeta(gpu_in_q);
+
+  assert(cudaMemcpyAsync(out.data(), d_out, bytes, cudaMemcpyDeviceToHost, gpu_device.stream()) == cudaSuccess);
+  assert(cudaStreamSynchronize(gpu_device.stream()) == cudaSuccess);
+
+  VERIFY_IS_EQUAL(out(0), expected_out(0));
+  VERIFY((std::isnan)(out(3)));
+
+  for (int i = 1; i < 6; ++i) {
+    if (i != 3) {
+      VERIFY_IS_APPROX(out(i), expected_out(i));
+    }
+  }
+
+  cudaFree(d_in_x);
+  cudaFree(d_in_q);
+  cudaFree(d_out);
+}
+
+template <typename Scalar>
+void test_cuda_polygamma()
+{
+  Tensor<Scalar, 1> in_x(7);
+  Tensor<Scalar, 1> in_n(7);
+  Tensor<Scalar, 1> out(7);
+  Tensor<Scalar, 1> expected_out(7);
+  out.setZero();
+
+  in_n(0) = Scalar(1);
+  in_n(1) = Scalar(1);
+  in_n(2) = Scalar(1);
+  in_n(3) = Scalar(17);
+  in_n(4) = Scalar(31);
+  in_n(5) = Scalar(28);
+  in_n(6) = Scalar(8);
+  
+  in_x(0) = Scalar(2);
+  in_x(1) = Scalar(3);
+  in_x(2) = Scalar(25.5);
+  in_x(3) = Scalar(4.7);
+  in_x(4) = Scalar(11.8);
+  in_x(5) = Scalar(17.7);
+  in_x(6) = Scalar(30.2);
+
+  expected_out(0) = Scalar(0.644934066848);
+  expected_out(1) = Scalar(0.394934066848);
+  expected_out(2) = Scalar(0.0399946696496);
+  expected_out(3) = Scalar(293.334565435);
+  expected_out(4) = Scalar(0.445487887616);
+  expected_out(5) = Scalar(-2.47810300902e-07);
+  expected_out(6) = Scalar(-8.29668781082e-09);
+
+  std::size_t bytes = in_x.size() * sizeof(Scalar);
+
+  Scalar* d_in_x;
+  Scalar* d_in_n;
+  Scalar* d_out;
+  cudaMalloc((void**)(&d_in_x), bytes);
+  cudaMalloc((void**)(&d_in_n), bytes);
+  cudaMalloc((void**)(&d_out), bytes);
+
+  cudaMemcpy(d_in_x, in_x.data(), bytes, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_in_n, in_n.data(), bytes, cudaMemcpyHostToDevice);
+  
+  Eigen::CudaStreamDevice stream;
+  Eigen::GpuDevice gpu_device(&stream);
+
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 1> > gpu_in_x(d_in_x, 7);
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 1> > gpu_in_n(d_in_n, 7);
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 1> > gpu_out(d_out, 7);
+
+  gpu_out.device(gpu_device) = gpu_in_n.polygamma(gpu_in_x);
+
+  assert(cudaMemcpyAsync(out.data(), d_out, bytes, cudaMemcpyDeviceToHost, gpu_device.stream()) == cudaSuccess);
+  assert(cudaStreamSynchronize(gpu_device.stream()) == cudaSuccess);
+
+  for (int i = 0; i < 7; ++i) {
+    VERIFY_IS_APPROX(out(i), expected_out(i));
+  }
+
+  cudaFree(d_in_x);
+  cudaFree(d_in_n);
+  cudaFree(d_out);
+}
+
+template <typename Scalar>
+void test_cuda_igamma()
+{
+  Tensor<Scalar, 2> a(6, 6);
+  Tensor<Scalar, 2> x(6, 6);
+  Tensor<Scalar, 2> out(6, 6);
+  out.setZero();
+
+  Scalar a_s[] = {Scalar(0), Scalar(1), Scalar(1.5), Scalar(4), Scalar(0.0001), Scalar(1000.5)};
+  Scalar x_s[] = {Scalar(0), Scalar(1), Scalar(1.5), Scalar(4), Scalar(0.0001), Scalar(1000.5)};
+
+  for (int i = 0; i < 6; ++i) {
+    for (int j = 0; j < 6; ++j) {
+      a(i, j) = a_s[i];
+      x(i, j) = x_s[j];
+    }
+  }
+
+  Scalar nan = std::numeric_limits<Scalar>::quiet_NaN();
+  Scalar igamma_s[][6] = {{0.0, nan, nan, nan, nan, nan},
+                          {0.0, 0.6321205588285578, 0.7768698398515702,
+                           0.9816843611112658, 9.999500016666262e-05, 1.0},
+                          {0.0, 0.4275932955291202, 0.608374823728911,
+                           0.9539882943107686, 7.522076445089201e-07, 1.0},
+                          {0.0, 0.01898815687615381, 0.06564245437845008,
+                           0.5665298796332909, 4.166333347221828e-18, 1.0},
+                          {0.0, 0.9999780593618628, 0.9999899967080838,
+                           0.9999996219837988, 0.9991370418689945, 1.0},
+                          {0.0, 0.0, 0.0, 0.0, 0.0, 0.5042041932513908}};
+
+
+
+  std::size_t bytes = a.size() * sizeof(Scalar);
+
+  Scalar* d_a;
+  Scalar* d_x;
+  Scalar* d_out;
+  assert(cudaMalloc((void**)(&d_a), bytes) == cudaSuccess);
+  assert(cudaMalloc((void**)(&d_x), bytes) == cudaSuccess);
+  assert(cudaMalloc((void**)(&d_out), bytes) == cudaSuccess);
+
+  cudaMemcpy(d_a, a.data(), bytes, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_x, x.data(), bytes, cudaMemcpyHostToDevice);
+
+  Eigen::CudaStreamDevice stream;
+  Eigen::GpuDevice gpu_device(&stream);
+
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 2> > gpu_a(d_a, 6, 6);
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 2> > gpu_x(d_x, 6, 6);
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 2> > gpu_out(d_out, 6, 6);
+
+  gpu_out.device(gpu_device) = gpu_a.igamma(gpu_x);
+
+  assert(cudaMemcpyAsync(out.data(), d_out, bytes, cudaMemcpyDeviceToHost, gpu_device.stream()) == cudaSuccess);
+  assert(cudaStreamSynchronize(gpu_device.stream()) == cudaSuccess);
+
+  for (int i = 0; i < 6; ++i) {
+    for (int j = 0; j < 6; ++j) {
+      if ((std::isnan)(igamma_s[i][j])) {
+        VERIFY((std::isnan)(out(i, j)));
+      } else {
+        VERIFY_IS_APPROX(out(i, j), igamma_s[i][j]);
+      }
+    }
+  }
+
+  cudaFree(d_a);
+  cudaFree(d_x);
+  cudaFree(d_out);
+}
+
+template <typename Scalar>
+void test_cuda_igammac()
+{
+  Tensor<Scalar, 2> a(6, 6);
+  Tensor<Scalar, 2> x(6, 6);
+  Tensor<Scalar, 2> out(6, 6);
+  out.setZero();
+
+  Scalar a_s[] = {Scalar(0), Scalar(1), Scalar(1.5), Scalar(4), Scalar(0.0001), Scalar(1000.5)};
+  Scalar x_s[] = {Scalar(0), Scalar(1), Scalar(1.5), Scalar(4), Scalar(0.0001), Scalar(1000.5)};
+
+  for (int i = 0; i < 6; ++i) {
+    for (int j = 0; j < 6; ++j) {
+      a(i, j) = a_s[i];
+      x(i, j) = x_s[j];
+    }
+  }
+
+  Scalar nan = std::numeric_limits<Scalar>::quiet_NaN();
+  Scalar igammac_s[][6] = {{nan, nan, nan, nan, nan, nan},
+                           {1.0, 0.36787944117144233, 0.22313016014842982,
+                            0.018315638888734182, 0.9999000049998333, 0.0},
+                           {1.0, 0.5724067044708798, 0.3916251762710878,
+                            0.04601170568923136, 0.9999992477923555, 0.0},
+                           {1.0, 0.9810118431238462, 0.9343575456215499,
+                            0.4334701203667089, 1.0, 0.0},
+                           {1.0, 2.1940638138146658e-05, 1.0003291916285e-05,
+                            3.7801620118431334e-07, 0.0008629581310054535,
+                            0.0},
+                           {1.0, 1.0, 1.0, 1.0, 1.0, 0.49579580674813944}};
+
+  std::size_t bytes = a.size() * sizeof(Scalar);
+
+  Scalar* d_a;
+  Scalar* d_x;
+  Scalar* d_out;
+  cudaMalloc((void**)(&d_a), bytes);
+  cudaMalloc((void**)(&d_x), bytes);
+  cudaMalloc((void**)(&d_out), bytes);
+
+  cudaMemcpy(d_a, a.data(), bytes, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_x, x.data(), bytes, cudaMemcpyHostToDevice);
+
+  Eigen::CudaStreamDevice stream;
+  Eigen::GpuDevice gpu_device(&stream);
+
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 2> > gpu_a(d_a, 6, 6);
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 2> > gpu_x(d_x, 6, 6);
+  Eigen::TensorMap<Eigen::Tensor<Scalar, 2> > gpu_out(d_out, 6, 6);
+
+  gpu_out.device(gpu_device) = gpu_a.igammac(gpu_x);
+
+  assert(cudaMemcpyAsync(out.data(), d_ou
