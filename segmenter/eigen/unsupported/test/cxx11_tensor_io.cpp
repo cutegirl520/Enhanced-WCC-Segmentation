@@ -114,4 +114,23 @@ static void test_output_const()
   std::stringstream os;
   os << tensor_map;
 
-  std::string
+  std::string expected("0\n1\n2\n3\n4");
+  VERIFY_IS_EQUAL(std::string(os.str()), expected);
+}
+
+
+void test_cxx11_tensor_io()
+{
+  CALL_SUBTEST(test_output_0d<ColMajor>());
+  CALL_SUBTEST(test_output_0d<RowMajor>());
+  CALL_SUBTEST(test_output_1d<ColMajor>());
+  CALL_SUBTEST(test_output_1d<RowMajor>());
+  CALL_SUBTEST(test_output_2d<ColMajor>());
+  CALL_SUBTEST(test_output_2d<RowMajor>());
+  CALL_SUBTEST(test_output_expr<ColMajor>());
+  CALL_SUBTEST(test_output_expr<RowMajor>());
+  CALL_SUBTEST(test_output_string<ColMajor>());
+  CALL_SUBTEST(test_output_string<RowMajor>());
+  CALL_SUBTEST(test_output_const<ColMajor>());
+  CALL_SUBTEST(test_output_const<RowMajor>());
+}
