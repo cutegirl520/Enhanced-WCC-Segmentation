@@ -32,4 +32,28 @@ static void test_full_reductions() {
   full_redux = in.sum();
 
   std::size_t in_bytes = in.size() * sizeof(float);
-  std::size_t out_bytes = full_redux.size() * sizeof(fl
+  std::size_t out_bytes = full_redux.size() * sizeof(float);
+  float* gpu_in_ptr = static_cast<float*>(gpu_device.allocate(in_bytes));
+  float* gpu_out_ptr = static_cast<float*>(gpu_device.allocate(out_bytes));
+  gpu_device.memcpyHostToDevice(gpu_in_ptr, in.data(), in_bytes);
+
+  TensorMap<Tensor<float, 2, DataLayout> > in_gpu(gpu_in_ptr, num_rows, num_cols);
+  TensorMap<Tensor<float, 0, DataLayout> > out_gpu(gpu_out_ptr);
+
+  out_gpu.device(gpu_device) = in_gpu.sum();
+
+  Tensor<float, 0, DataLayout> full_redux_gpu;
+  gpu_device.memcpyDeviceToHost(full_redux_gpu.data(), gpu_out_ptr, out_bytes);
+  gpu_device.synchronize();
+
+  // Check that the CPU and GPU reductions return the same result.
+  VERIFY_IS_APPROX(full_redux(), full_redux_gpu());
+
+  gpu_device.deallocate(gpu_in_ptr);
+  gpu_device.deallocate(gpu_out_ptr);
+}
+
+void test_cxx11_tensor_reduction_cuda() {
+  CALL_SUBTEST_1(test_full_reductions<ColMajor>());
+  CALL_SUBTEST_2(test_full_reductions<RowMajor>());
+}
