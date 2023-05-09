@@ -141,4 +141,50 @@ static void test_expr_reverse(bool LValue)
 
   VERIFY_IS_EQUAL(result.dimension(0), 2);
   VERIFY_IS_EQUAL(result.dimension(1), 3);
-  VERIFY_IS_EQUAL(result.di
+  VERIFY_IS_EQUAL(result.dimension(2), 5);
+  VERIFY_IS_EQUAL(result.dimension(3), 7);
+
+  for (int i = 0; i < expected.dimension(0); ++i) {
+    for (int j = 0; j < expected.dimension(1); ++j) {
+      for (int k = 0; k < expected.dimension(2); ++k) {
+        for (int l = 0; l < expected.dimension(3); ++l) {
+          VERIFY_IS_EQUAL(result(i,j,k,l), expected(i,j,k,l));
+        }
+      }
+    }
+  }
+
+  dst_slice_start[2] = 0;
+  result.setRandom();
+  for (int i = 0; i < 5; ++i) {
+     if (LValue) {
+       result.slice(dst_slice_start, dst_slice_dim).reverse(dim_rev) =
+           tensor.slice(dst_slice_start, dst_slice_dim);
+     } else {
+       result.slice(dst_slice_start, dst_slice_dim) =
+           tensor.reverse(dim_rev).slice(dst_slice_start, dst_slice_dim);
+     }
+    dst_slice_start[2] += 1;
+  }
+
+  for (int i = 0; i < expected.dimension(0); ++i) {
+    for (int j = 0; j < expected.dimension(1); ++j) {
+      for (int k = 0; k < expected.dimension(2); ++k) {
+        for (int l = 0; l < expected.dimension(3); ++l) {
+          VERIFY_IS_EQUAL(result(i,j,k,l), expected(i,j,k,l));
+        }
+      }
+    }
+  }
+}
+
+
+void test_cxx11_tensor_reverse()
+{
+  CALL_SUBTEST(test_simple_reverse<ColMajor>());
+  CALL_SUBTEST(test_simple_reverse<RowMajor>());
+  CALL_SUBTEST(test_expr_reverse<ColMajor>(true));
+  CALL_SUBTEST(test_expr_reverse<RowMajor>(true));
+  CALL_SUBTEST(test_expr_reverse<ColMajor>(false));
+  CALL_SUBTEST(test_expr_reverse<RowMajor>(false));
+}
