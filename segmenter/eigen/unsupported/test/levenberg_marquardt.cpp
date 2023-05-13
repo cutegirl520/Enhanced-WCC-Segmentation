@@ -1461,3 +1461,18 @@ void test_levenberg_marquardt()
     CALL_SUBTEST(testNistChwirut2());
 
     // NIST tests, level of difficulty = "Average"
+    CALL_SUBTEST(testNistHahn1());
+    CALL_SUBTEST(testNistMisra1d());
+    CALL_SUBTEST(testNistMGH17());
+    CALL_SUBTEST(testNistLanczos1());
+
+//     // NIST tests, level of difficulty = "Higher"
+    CALL_SUBTEST(testNistRat42());
+    CALL_SUBTEST(testNistMGH10());
+    CALL_SUBTEST(testNistBoxBOD());
+//     CALL_SUBTEST(testNistMGH09());
+    CALL_SUBTEST(testNistBennett5());
+    CALL_SUBTEST(testNistThurber());
+    CALL_SUBTEST(testNistRat43());
+    CALL_SUBTEST(testNistEckerle4());
+}
