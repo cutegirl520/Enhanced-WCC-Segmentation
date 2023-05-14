@@ -200,4 +200,138 @@ void test_openglsupport()
     Vector2f vf2; vf2.setRandom(); Vector3f vf23; vf23 << vf2, 1;
     VERIFY_MATRIX(glScale(vf2), Projective3f(Scaling(vf23)).matrix());
     Vector2d vd2; vd2.setRandom(); Vector3d vd23; vd23 << vd2, 1;
-    VERIFY_MATRIX(glScale(vd2), Project
+    VERIFY_MATRIX(glScale(vd2), Projective3d(Scaling(vd23)).matrix());
+    
+    Vector3f vf3; vf3.setRandom();
+    VERIFY_MATRIX(glScale(vf3), Projective3f(Scaling(vf3)).matrix());
+    Vector3d vd3; vd3.setRandom();
+    VERIFY_MATRIX(glScale(vd3), Projective3d(Scaling(vd3)).matrix());
+    
+    UniformScaling<float> usf(internal::random<float>());
+    VERIFY_MATRIX(glScale(usf), Projective3f(usf).matrix());
+    
+    UniformScaling<double> usd(internal::random<double>());
+    VERIFY_MATRIX(glScale(usd), Projective3d(usd).matrix());
+  }
+  
+  // uniform
+  {
+    const char* vtx = "void main(void) { gl_Position = gl_Vertex; }\n";
+    
+    if(GLEW_VERSION_2_0)
+    {
+      #ifdef GL_VERSION_2_0
+      const char* frg = ""
+        "uniform vec2 v2f;\n"
+        "uniform vec3 v3f;\n"
+        "uniform vec4 v4f;\n"
+        "uniform ivec2 v2i;\n"
+        "uniform ivec3 v3i;\n"
+        "uniform ivec4 v4i;\n"
+        "uniform mat2 m2f;\n"
+        "uniform mat3 m3f;\n"
+        "uniform mat4 m4f;\n"
+        "void main(void) { gl_FragColor = vec4(v2f[0]+v3f[0]+v4f[0])+vec4(v2i[0]+v3i[0]+v4i[0])+vec4(m2f[0][0]+m3f[0][0]+m4f[0][0]); }\n";
+        
+      GLint prg_id = createShader(vtx,frg);
+      
+      VERIFY_UNIFORM(fv,v2f, Vector2f);
+      VERIFY_UNIFORM(fv,v3f, Vector3f);
+      VERIFY_UNIFORM(fv,v4f, Vector4f);
+      VERIFY_UNIFORMi(v2i, Vector2i);
+      VERIFY_UNIFORMi(v3i, Vector3i);
+      VERIFY_UNIFORMi(v4i, Vector4i);
+      VERIFY_UNIFORM(fv,m2f, Matrix2f);
+      VERIFY_UNIFORM(fv,m3f, Matrix3f);
+      VERIFY_UNIFORM(fv,m4f, Matrix4f);
+      #endif
+    }
+    else
+      std::cerr << "Warning: opengl 2.0 was not tested\n";
+    
+    if(GLEW_VERSION_2_1)
+    {
+      #ifdef GL_VERSION_2_1
+      const char* frg = "#version 120\n"
+        "uniform mat2x3 m23f;\n"
+        "uniform mat3x2 m32f;\n"
+        "uniform mat2x4 m24f;\n"
+        "uniform mat4x2 m42f;\n"
+        "uniform mat3x4 m34f;\n"
+        "uniform mat4x3 m43f;\n"
+        "void main(void) { gl_FragColor = vec4(m23f[0][0]+m32f[0][0]+m24f[0][0]+m42f[0][0]+m34f[0][0]+m43f[0][0]); }\n";
+        
+      GLint prg_id = createShader(vtx,frg);
+      
+      typedef Matrix<float,2,3> Matrix23f;
+      typedef Matrix<float,3,2> Matrix32f;
+      typedef Matrix<float,2,4> Matrix24f;
+      typedef Matrix<float,4,2> Matrix42f;
+      typedef Matrix<float,3,4> Matrix34f;
+      typedef Matrix<float,4,3> Matrix43f;
+      
+      VERIFY_UNIFORM(fv,m23f, Matrix23f);
+      VERIFY_UNIFORM(fv,m32f, Matrix32f);
+      VERIFY_UNIFORM(fv,m24f, Matrix24f);
+      VERIFY_UNIFORM(fv,m42f, Matrix42f);
+      VERIFY_UNIFORM(fv,m34f, Matrix34f);
+      VERIFY_UNIFORM(fv,m43f, Matrix43f);
+      #endif
+    }
+    else
+      std::cerr << "Warning: opengl 2.1 was not tested\n";
+    
+    if(GLEW_VERSION_3_0)
+    {
+      #ifdef GL_VERSION_3_0
+      const char* frg = "#version 150\n"
+        "uniform uvec2 v2ui;\n"
+        "uniform uvec3 v3ui;\n"
+        "uniform uvec4 v4ui;\n"
+        "out vec4 data;\n"
+        "void main(void) { data = vec4(v2ui[0]+v3ui[0]+v4ui[0]); }\n";
+        
+      GLint prg_id = createShader(vtx,frg);
+      
+      typedef Matrix<unsigned int,2,1> Vector2ui;
+      typedef Matrix<unsigned int,3,1> Vector3ui;
+      typedef Matrix<unsigned int,4,1> Vector4ui;
+      
+      VERIFY_UNIFORMi(v2ui, Vector2ui);
+      VERIFY_UNIFORMi(v3ui, Vector3ui);
+      VERIFY_UNIFORMi(v4ui, Vector4ui);
+      #endif
+    }
+    else
+      std::cerr << "Warning: opengl 3.0 was not tested\n";
+    
+    #ifdef GLEW_ARB_gpu_shader_fp64
+    if(GLEW_ARB_gpu_shader_fp64)
+    {
+      #ifdef GL_ARB_gpu_shader_fp64
+      const char* frg = "#version 150\n"
+        "uniform dvec2 v2d;\n"
+        "uniform dvec3 v3d;\n"
+        "uniform dvec4 v4d;\n"
+        "out vec4 data;\n"
+        "void main(void) { data = vec4(v2d[0]+v3d[0]+v4d[0]); }\n";
+        
+      GLint prg_id = createShader(vtx,frg);
+      
+      typedef Vector2d Vector2d;
+      typedef Vector3d Vector3d;
+      typedef Vector4d Vector4d;
+      
+      VERIFY_UNIFORM(dv,v2d, Vector2d);
+      VERIFY_UNIFORM(dv,v3d, Vector3d);
+      VERIFY_UNIFORM(dv,v4d, Vector4d);
+      #endif
+    }
+    else
+      std::cerr << "Warning: GLEW_ARB_gpu_shader_fp64 was not tested\n";
+    #else
+      std::cerr << "Warning: GLEW_ARB_gpu_shader_fp64 was not tested\n";
+    #endif
+  }
+  
+}
