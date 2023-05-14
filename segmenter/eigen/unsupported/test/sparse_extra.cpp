@@ -93,4 +93,55 @@ template<typename SparseMatrixType> void sparse_extra(const SparseMatrixType& re
 //     while(!remaining.empty())
 //     {
 //       int i = internal::random<int>(0,remaining.size()-1);
-//       w->coeffRef(remaining[i].x(),remaining[i].y(
+//       w->coeffRef(remaining[i].x(),remaining[i].y()) = refMat.coeff(remaining[i].x(),remaining[i].y());
+//       remaining[i] = remaining.back();
+//       remaining.pop_back();
+//     }
+//   }
+//   VERIFY_IS_APPROX(m, refMat);
+
+    VERIFY(( test_random_setter<RandomSetter<SparseMatrixType, StdMapTraits> >(m,refMat,nonzeroCoords) ));
+    #ifdef EIGEN_UNORDERED_MAP_SUPPORT
+    VERIFY(( test_random_setter<RandomSetter<SparseMatrixType, StdUnorderedMapTraits> >(m,refMat,nonzeroCoords) ));
+    #endif
+    #ifdef _DENSE_HASH_MAP_H_
+    VERIFY(( test_random_setter<RandomSetter<SparseMatrixType, GoogleDenseHashMapTraits> >(m,refMat,nonzeroCoords) ));
+    #endif
+    #ifdef _SPARSE_HASH_MAP_H_
+    VERIFY(( test_random_setter<RandomSetter<SparseMatrixType, GoogleSparseHashMapTraits> >(m,refMat,nonzeroCoords) ));
+    #endif
+
+
+  // test RandomSetter
+  /*{
+    SparseMatrixType m1(rows,cols), m2(rows,cols);
+    DenseMatrix refM1 = DenseMatrix::Zero(rows, rows);
+    initSparse<Scalar>(density, refM1, m1);
+    {
+      Eigen::RandomSetter<SparseMatrixType > setter(m2);
+      for (int j=0; j<m1.outerSize(); ++j)
+        for (typename SparseMatrixType::InnerIterator i(m1,j); i; ++i)
+          setter(i.index(), j) = i.value();
+    }
+    VERIFY_IS_APPROX(m1, m2);
+  }*/
+
+
+}
+
+void test_sparse_extra()
+{
+  for(int i = 0; i < g_repeat; i++) {
+    int s = Eigen::internal::random<int>(1,50);
+    CALL_SUBTEST_1( sparse_extra(SparseMatrix<double>(8, 8)) );
+    CALL_SUBTEST_2( sparse_extra(SparseMatrix<std::complex<double> >(s, s)) );
+    CALL_SUBTEST_1( sparse_extra(SparseMatrix<double>(s, s)) );
+
+    CALL_SUBTEST_3( sparse_extra(DynamicSparseMatrix<double>(s, s)) );
+//    CALL_SUBTEST_3(( sparse_basic(DynamicSparseMatrix<double>(s, s)) ));
+//    CALL_SUBTEST_3(( sparse_basic(DynamicSparseMatrix<double,ColMajor,long int>(s, s)) ));
+
+    CALL_SUBTEST_3( (sparse_product<DynamicSparseMatrix<float, ColMajor> >()) );
+    CALL_SUBTEST_3( (sparse_product<DynamicSparseMatrix<float, RowMajor> >()) );
+  }
+}
