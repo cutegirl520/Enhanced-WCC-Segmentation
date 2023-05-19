@@ -340,4 +340,210 @@ void test(Corpus &corpus, CRFBuilder &engine, const std::set<unsigned int>& trai
       if (training_bigram_vocab.count(w) == 0) w = kUNK;
     }
 
-    //BOOST_ASSERT_MSG(len == labels.size(), "Unequal sentence and gold labe
+    //BOOST_ASSERT_MSG(len == labels.size(), "Unequal sentence and gold label length");
+
+    cnn::ComputationGraph cg;
+    std::vector<unsigned> pred_labels;
+    //_INFO << "sent " << sid << " starts decoding";
+    engine.decode(&cg, raw_unigrams, raw_bigrams, unigrams, bigrams, pred_labels);
+    BOOST_ASSERT_MSG(len == pred_labels.size(), "Unequal sentence and predict label length");
+
+    std::tuple<unsigned, unsigned, unsigned> result = eval_sentence(pred_labels, labels, corpus.id2label);
+    n_total_gold_words += std::get<0>(result);
+    n_total_pred_words += std::get<1>(result);
+    n_total_right_words += std::get<2>(result);
+
+    // output as col like file
+    for (unsigned i=0; i<len; i++){
+      ofs << unigrams_str[i] << "\t" << corpus.id2label[pred_labels[i]] << std::endl;
+    }
+    ofs << std::endl;
+  }
+
+  double precision = n_total_right_words / n_total_pred_words;
+  double recall = n_total_right_words / n_total_gold_words;
+  double f_score = 2 * precision * recall / (precision + recall);
+  _INFO << "test fscore" << f_score;
+  ofs.close();
+  auto t_end = std::chrono::high_resolution_clock::now();
+  _INFO << " [" << n <<
+        " sents in " << std::chrono::duration<double, std::milli>(t_end - t_start).count() << " ms]";
+}
+
+void segment(Corpus &corpus, CRFBuilder &engine, const std::set<unsigned int>& training_unigram_vocab,
+          const std::set<unsigned int> &training_bigram_vocab, const std::string &outfile) {
+
+  std::ofstream ofs(outfile);
+  BOOST_ASSERT(ofs != NULL);
+
+  auto kUNK = corpus.get_or_add_unigram(Corpus::UNK);
+  double n_total_gold_words = 0;
+  double n_total_pred_words = 0;
+  double n_total_right_words = 0;
+
+  auto t_start = std::chrono::high_resolution_clock::now();
+  unsigned n = corpus.n_test;
+
+  for (unsigned sid = 0; sid < n; ++sid) {
+    std::vector<unsigned> raw_unigrams, raw_bigrams;
+    std::vector<std::string> unigrams_str;
+    raw_unigrams = corpus.test_unigram_sentences[sid];
+    raw_bigrams = corpus.test_bigram_sentences[sid];
+    unigrams_str = corpus.test_unigram_sentences_str[sid];
+
+    unsigned len = raw_unigrams.size();
+
+    std::vector<unsigned> unigrams = raw_unigrams;
+    for (auto& w : unigrams) {
+      if (training_unigram_vocab.count(w) == 0) w = kUNK;
+    }
+    std::vector<unsigned> bigrams = raw_bigrams;
+    for (auto &w : bigrams) {
+      if (training_bigram_vocab.count(w) == 0) w = kUNK;
+    }
+
+    //BOOST_ASSERT_MSG(len == labels.size(), "Unequal sentence and gold label length");
+
+    cnn::ComputationGraph cg;
+    std::vector<unsigned> pred_labels;
+    //_INFO << "sent " << sid << " starts decoding";
+    engine.decode(&cg, raw_unigrams, raw_bigrams, unigrams, bigrams, pred_labels);
+    BOOST_ASSERT_MSG(len == pred_labels.size(), "Unequal sentence and predict label length");
+
+    // output as col like file
+    for (unsigned i=0; i<len; i++){
+      ofs << unigrams_str[i] << "\t" << corpus.id2label[pred_labels[i]] << std::endl;
+    }
+    ofs << std::endl;
+  }
+
+  ofs.close();
+  auto t_end = std::chrono::high_resolution_clock::now();
+  _INFO << " [" << n <<
+        " sents in " << std::chrono::duration<double, std::milli>(t_end - t_start).count() << " ms]";
+}
+
+void print_conf(const boost::program_options::variables_map &conf) {
+  LOG(INFO) << "optimizer: " << conf["optimizer"].as<std::string>();
+  LOG_IF(INFO, conf.count("test")) << "test data: " << conf["test"].as<std::string>();
+  LOG(INFO) << "unigram dim: " << conf["unigram_dim"].as<unsigned>();
+  LOG_IF(INFO, conf.count("unigram")) << "pretraiend unigram embedding: " << conf["unigram"].as<std::string>();
+  LOG(INFO) << "bigram dim: " << conf["bigram_dim"].as<unsigned>();
+  LOG_IF(INFO, conf.count("bigram")) << "pretrained bigram embedding: " << conf["bigram"].as<std::string>();
+  LOG(INFO) << "label dim: " << conf["label_dim"].as<unsigned>();
+  LOG(INFO) << "dropout rate: " << conf["dropout"].as<float>();
+  LOG(INFO) << "train data" << conf["train"].as<std::string>();
+  LOG(INFO) << "dev data: " << conf["dev"].as<std::string>();
+}
+
+int main(int argc, char* argv[]) {
+  google::InitGoogleLogging(argv[0]);
+  LOG(INFO) << "glog starts";
+
+  cnn::Initialize(argc, argv, 123);
+
+  std::cerr << "command:";
+  for (int i = 0; i < argc; ++i) { std::cerr << ' ' << argv[i]; }
+  std::cerr << std::endl;
+
+  po::variables_map conf; // configuration map
+  init_command_line(argc, argv, &conf);
+
+  if (conf["unk_strategy"].as<unsigned>() == 1) {
+    _INFO << "unknown word strategy: STOCHASTIC REPLACEMENT";
+  } else {
+    _INFO << "unknown word strategy: NO REPLACEMENT";
+  }
+
+  std::string model_name;
+  if (conf.count("train")) {
+    model_name = get_model_name(conf);
+    _INFO << "going to write parameters to file: " << model_name;
+  } else {
+    model_name = conf["model"].as<std::string>();
+    _INFO << "going to load parameters from file: " << model_name;
+  }
+
+  bool is_train = (conf["is_train"].as<unsigned>() == 1);
+  if (is_train) print_conf(conf);
+
+  _INFO << "load training data";
+  corpus.load_training_data(conf["train"].as<std::string>(), "train");
+
+  std::set<unsigned> training_unigram_vocab, uni_unks;
+  std::set<unsigned> training_bigram_vocab, bi_unks;
+
+  // TODO set freq
+  get_vocabulary_and_unks(training_unigram_vocab, uni_unks, 2, corpus.train_unigram_sentences);
+  get_vocabulary_and_unks(training_bigram_vocab, bi_unks, 1, corpus.train_bigram_sentences);
+
+  // pretrained emb
+  _INFO << "set low freq chars as UNK";
+  std::unordered_map<unsigned, std::vector<float>> unigram_pretrained;
+  std::unordered_map<unsigned, std::vector<float>> bigram_pretrained;
+  std::unordered_map<unsigned, std::vector<float>> ounigram_pretrained;
+  std::unordered_map<unsigned, std::vector<float>> obigram_pretrained;
+
+  if (conf.count("unigram")) {
+    load_pretrained_embedding(conf["unigram"].as<std::string>(), conf["unigram_dim"].as<unsigned>(), unigram_pretrained,
+                              corpus, 1);
+    _INFO << unigram_pretrained.size() <<" pretrained unigram embedding is loaded.";
+  }
+
+  if (conf.count("bigram")) {
+    load_pretrained_embedding(conf["bigram"].as<std::string>(), conf["bigram_dim"].as<unsigned>(),
+                              bigram_pretrained ,corpus, 2);
+    _INFO <<  bigram_pretrained.size() <<" pretrained bigram embeddings is loaded.";
+  }
+
+  if (conf.count("ounigram")) {
+    load_pretrained_embedding(conf["ounigram"].as<std::string>(), conf["unigram_dim"].as<unsigned>(), ounigram_pretrained,
+                              corpus, 1);
+    _INFO << ounigram_pretrained.size() <<" pretrained out-of-domain unigram embedding is loaded.";
+  }
+
+  if (conf.count("obigram")) {
+    load_pretrained_embedding(conf["obigram"].as<std::string>(), conf["bigram_dim"].as<unsigned>(),
+                              obigram_pretrained ,corpus, 2);
+    _INFO <<  obigram_pretrained.size() <<" pretrained out-of-domain bigram embeddings is loaded.";
+  }
+  //create Model
+  Model model;
+
+  _INFO << "building ...";
+  CRFBuilder engine(&model, conf, corpus, unigram_pretrained, bigram_pretrained,
+                       ounigram_pretrained, obigram_pretrained);
+  _INFO << "building finishes";
+
+  if (is_train) {
+    LOG(INFO) << "there are total " << corpus.n_train << " sents.";
+    corpus.load_training_data(conf["dev"].as<std::string>(), "dev");
+    LOG(INFO) << "there are total " << corpus.n_dev << " sents.";
+    if (conf.count("test")) {
+      //corpus.load_test_data(conf["test"].as<std::string>());
+      corpus.load_training_data(conf["test"].as<std::string>(), "test");
+      LOG(INFO) << "there are total " << corpus.n_test << " sents.";
+    }
+    std::string outfile = conf["outfile"].as<std::string>();
+    train(conf, model, model_name, corpus, training_unigram_vocab,
+          training_bigram_vocab, uni_unks, bi_unks, engine, outfile);
+    _INFO << "training done";
+  }
+  else{
+    // load model
+    _INFO << "loading model";
+    std::ifstream in(model_name.c_str());
+    boost::archive::text_iarchive ia(in);
+    ia >> model;
+    _INFO << "loading model finised";
+    corpus.load_test_data(conf["test"].as<std::string>());
+    //corpus.load_training_data(conf["test"].as<std::string>(), "test");
+    std::string outfile = conf["outfile"].as<std::string>();
+    _INFO << "resluts will be written to " << outfile;
+    segment(corpus, engine, training_unigram_vocab, training_bigram_vocab, outfile);
+  }
+
+  _INFO << "program over";
+  LOG(INFO) << "all done";
+  return 0;
+}
