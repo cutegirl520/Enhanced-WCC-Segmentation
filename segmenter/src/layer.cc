@@ -446,4 +446,28 @@ cnn::expr::Expression AttentionLayer::get_output(cnn::ComputationGraph* hg,
   for (unsigned i = 0; i < n_windows; ++i) {
     weights[i] = cnn::expr::lookup(*hg, p_K[i], wids[i]);
   }
-  cnn::expr::Expression softmax = cnn::ex
+  cnn::expr::Expression softmax = cnn::expr::softmax(cnn::expr::concatenate(weights));
+  cnn::expr::Expression ret = cnn::expr::concatenate_cols(inputs) * softmax;
+  return ret;
+}
+
+
+void StaticInputBidirectionalLSTM::get_inputs(cnn::ComputationGraph* hg,
+  const std::vector<unsigned>& raw_sentence,
+  const std::vector<unsigned>& sentence,
+  const std::vector<std::string>& sentence_str,
+  const std::vector<unsigned>& postags,
+  std::vector<cnn::expr::Expression>& exprs) {
+
+  unsigned len = sentence.size();
+  exprs.resize(len);
+  for (unsigned i = 0; i < len; ++i) {
+    auto wid = sentence[i];
+    auto pid = postags[i];
+    auto pre_wid = raw_sentence[i];
+    if (!pretrained.count(pre_wid)) { pre_wid = 0; }
+
+    exprs[i] = input_layer.add_input(hg, wid, pid, pre_wid);
+  }
+}
+
